@@ -2,11 +2,11 @@ use anchor_lang::prelude::*;
 
 declare_id!("2qqDQ8RadpzattcT4mAcxuzrLjrvsmz3NXDqf72pmyYR");
 
-
 #[account]
 pub struct DonationService {
     pub owner: Pubkey,
-    pub last_fundraising_id: u64
+    pub fundraisings_num: u64,
+    pub bump: u8
 }
 
 #[account]
@@ -25,7 +25,7 @@ pub struct DonaterInfo {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(init, payer=owner, space=8 + 32+8)]
+    #[account(init, payer=owner, space=8 + 32+8+1, seeds=[b"state"], bump)]
     pub donation_service: Account<'info, DonationService>,
     #[account(mut)]
     pub owner: Signer<'info>,
@@ -38,14 +38,14 @@ pub struct CreateFundraising<'info> {
     pub user: Signer<'info>,
     #[account(mut)]
     pub donation_service: Account<'info, DonationService>,
-    #[account(init, payer=user, space = 8 + 32+8+8+1, seeds=[b"fundraising", donation_service.last_fundraising_id.to_le_bytes().as_ref()], bump)]
+    #[account(init, payer=user, space = 8 + 32+8+8+1, seeds=[b"fundraising", donation_service.fundraisings_num.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
     
     pub system_program: Program<'info, System>
 }
 
 #[derive(Accounts)]
-#[instruction(fundraising_id: u64)]
+#[instruction(amount: u64, fundraising_id: u64)]
 pub struct Donate<'info> {
     #[account(mut)]
     pub donater: Signer<'info>,
@@ -56,23 +56,25 @@ pub struct Donate<'info> {
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
     pub system_program: Program<'info, System>
-
 }
 
 #[program]
 pub mod solana_donation {
+    use anchor_lang::solana_program::{system_instruction, program::invoke};
+
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
         let donation_service_account = &mut ctx.accounts.donation_service;
         donation_service_account.owner = ctx.accounts.owner.key();
+        donation_service_account.bump = *ctx.bumps.get("donation_service").unwrap();
         Ok(())
     }
 
     pub fn create_fundraising(ctx: Context<CreateFundraising>) -> Result<()> {
         let donation_service_account = &mut ctx.accounts.donation_service;
-        let new_fundraising_id = donation_service_account.last_fundraising_id;
-        donation_service_account.last_fundraising_id += 1;
+        let new_fundraising_id = donation_service_account.fundraisings_num;
+        donation_service_account.fundraisings_num += 1;
 
         let fundraising_account = &mut ctx.accounts.fundraising;
         fundraising_account.bump = *ctx.bumps.get("fundraising").unwrap();
@@ -81,9 +83,17 @@ pub mod solana_donation {
         Ok(())
     }
 
-    pub fn donate(ctx: Context<Donate>, amount: u64) -> Result<()> {
-        let donation_service_account = &mut ctx.accounts.donation_service;
+    pub fn donate(ctx: Context<Donate>, amount: u64, fundraising_id: u64) -> Result<()> {
+
         let fundraising_account = &mut ctx.accounts.fundraising;
+        let donater_account = &mut ctx.accounts.donater;
+
+        let transfer_instruction = system_instruction::transfer(&donater_account.key(), &fundraising_account.key(), amount);
+
+        invoke(&transfer_instruction, &[
+            donater_account.to_account_info(),
+            fundraising_account.to_account_info()
+        ])?;
         fundraising_account.total_sum += amount;
 
         Ok(())
