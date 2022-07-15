@@ -70,14 +70,14 @@ pub mod solana_donation {
     }
 
     pub fn create_fundraising(ctx: Context<CreateFundraising>) -> Result<()> {
-        // let donation_service_account = &mut ctx.accounts.donation_service;
-        // let new_fundraising_id = donation_service_account.last_fundraising_id;
-        // donation_service_account.last_fundraising_id += 1;
+        let donation_service_account = &mut ctx.accounts.donation_service;
+        let new_fundraising_id = donation_service_account.last_fundraising_id;
+        donation_service_account.last_fundraising_id += 1;
 
-        // let fundraising_account = &mut ctx.accounts.fundraising;
-        // fundraising_account.bump = *ctx.bumps.get("fundraising").unwrap();
-        // fundraising_account.id = new_fundraising_id;
-        // fundraising_account.owner = ctx.accounts.user.key();
+        let fundraising_account = &mut ctx.accounts.fundraising;
+        fundraising_account.bump = *ctx.bumps.get("fundraising").unwrap();
+        fundraising_account.id = new_fundraising_id;
+        fundraising_account.owner = ctx.accounts.user.key();
         Ok(())
     }
 
