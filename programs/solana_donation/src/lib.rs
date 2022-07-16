@@ -46,18 +46,19 @@ pub struct CreateFundraising<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(amount: u64, fundraising_id: u64, referral: Pubkey)]
+#[instruction(amount: u64, fundraising_id: u64)]
 pub struct Donate<'info> {
     #[account(mut)]
     pub donater: Signer<'info>,
     #[account(init_if_needed, payer=donater, space = 8 + 8+1, seeds = [b"donater-info", fundraising_id.to_le_bytes().as_ref(), donater.key().as_ref()], bump)]
     pub donater_info: Account<'info, DonaterInfo>,
-    #[account(mut)]
+    #[account(mut, seeds=[b"state"], bump)]
     pub donation_service: Account<'info, DonationService>,
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
+    #[account(mut)]
     pub chrt_mint: Account<'info, Mint>,
-    #[account(mut, token::mint=chrt_mint, token::authority=referral)]
+    #[account(mut, token::mint=chrt_mint)]
     pub referrer_chrt_account: Account<'info, TokenAccount>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
@@ -89,9 +90,11 @@ pub mod solana_donation {
         Ok(())
     }
 
-    pub fn donate(ctx: Context<Donate>, amount: u64, fundraising_id: u64, referral: Option<Pubkey>) -> Result<()> {
+    pub fn donate(ctx: Context<Donate>, amount: u64, fundraising_id: u64) -> Result<()> {
 
         let fundraising_account = &mut ctx.accounts.fundraising;
+        let donation_account = &mut ctx.accounts.donation_service;
+
         let donater_account = &mut ctx.accounts.donater;
 
         let transfer_instruction = system_instruction::transfer(&donater_account.key(), &fundraising_account.key(), amount);
@@ -102,14 +105,23 @@ pub mod solana_donation {
         ])?;
         fundraising_account.total_sum += amount;
 
-        if let Some(referral_address) = referral {
-            let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), MintTo{
-                to: ctx.accounts.referrer_chrt_account.to_account_info(),
-                mint: ctx.accounts.chrt_mint.to_account_info(),
-                authority: ctx.accounts.donation_service.to_account_info(),
-            });
-            token::mint_to(cpi_ctx, amount * 101)?;
-        }
+        let state_bump = donation_account.bump.to_le_bytes();
+
+        let inner = vec![
+            b"state".as_ref(),
+            state_bump.as_ref()
+
+        ];
+        let outer = vec![inner.as_slice()];
+
+        let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), 
+        MintTo{
+            to: ctx.accounts.referrer_chrt_account.to_account_info(),
+            mint: ctx.accounts.chrt_mint.to_account_info(),
+            authority: ctx.accounts.donation_service.to_account_info(),
+        }, outer.as_slice());
+        token::mint_to(cpi_ctx, amount * 101)?;
+        
 
         Ok(())
     }

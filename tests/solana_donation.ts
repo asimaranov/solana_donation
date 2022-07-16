@@ -112,7 +112,7 @@ describe("solana_donation", () => {
       referral.publicKey
     );
 
-    await program.methods.donate(sumToDonate, fundraisingId, referral.publicKey).accounts({
+    await program.methods.donate(sumToDonate, fundraisingId).accounts({
       donater: donater.publicKey,
       donaterInfo: donaterInfo,
       donationService: donationAccount,
@@ -125,5 +125,7 @@ describe("solana_donation", () => {
     assert(fundraisingState.totalSum.eq(sumToDonate));
     const finaleDonaterBalance = await provider.connection.getBalance(donater.publicKey);
     assert(initialDonaterBalance - finaleDonaterBalance >= sumToDonate.toNumber());
+
   })
+
 });
