@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{Token, TokenAccount, Mint};
 
 declare_id!("2qqDQ8RadpzattcT4mAcxuzrLjrvsmz3NXDqf72pmyYR");
 
@@ -45,7 +46,7 @@ pub struct CreateFundraising<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(amount: u64, fundraising_id: u64)]
+#[instruction(amount: u64, fundraising_id: u64, referral: Pubkey)]
 pub struct Donate<'info> {
     #[account(mut)]
     pub donater: Signer<'info>,
@@ -55,12 +56,17 @@ pub struct Donate<'info> {
     pub donation_service: Account<'info, DonationService>,
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
-    pub system_program: Program<'info, System>
+    pub chrt_mint: Account<'info, Mint>,
+    #[account(mut, token::mint=chrt_mint, token::authority=referral)]
+    pub referrer_chrt_account: Account<'info, TokenAccount>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[program]
 pub mod solana_donation {
     use anchor_lang::solana_program::{system_instruction, program::invoke};
+    use anchor_spl::token::{Mint, MintTo, self};
 
     use super::*;
 
@@ -83,7 +89,7 @@ pub mod solana_donation {
         Ok(())
     }
 
-    pub fn donate(ctx: Context<Donate>, amount: u64, fundraising_id: u64) -> Result<()> {
+    pub fn donate(ctx: Context<Donate>, amount: u64, fundraising_id: u64, referral: Option<Pubkey>) -> Result<()> {
 
         let fundraising_account = &mut ctx.accounts.fundraising;
         let donater_account = &mut ctx.accounts.donater;
@@ -95,6 +101,15 @@ pub mod solana_donation {
             fundraising_account.to_account_info()
         ])?;
         fundraising_account.total_sum += amount;
+
+        if let Some(referral_address) = referral {
+            let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), MintTo{
+                to: ctx.accounts.referrer_chrt_account.to_account_info(),
+                mint: ctx.accounts.chrt_mint.to_account_info(),
+                authority: ctx.accounts.donation_service.to_account_info(),
+            });
+            token::mint_to(cpi_ctx, amount * 101)?;
+        }
 
         Ok(())
     }

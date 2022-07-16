@@ -3,6 +3,7 @@ import { Program, web3 } from "@project-serum/anchor";
 import { BN } from "bn.js";
 import { assert } from "chai";
 import { SolanaDonation } from "../target/types/solana_donation";
+import { approve, createMint, getOrCreateAssociatedTokenAccount, mintTo, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 describe("solana_donation", () => {
 
@@ -13,7 +14,12 @@ describe("solana_donation", () => {
   const owner = (program.provider as anchor.AnchorProvider).wallet;
 
   const fundraisingUserAccount = web3.Keypair.generate();
+  const payer = web3.Keypair.generate();
+
   const donater = web3.Keypair.generate();
+  const referral = web3.Keypair.generate();
+
+  let chrtMint: web3.PublicKey;
 
   const provider = anchor.getProvider()
 
@@ -30,6 +36,13 @@ describe("solana_donation", () => {
     assert(donationState.fundraisingsNum.eq(new anchor.BN(0)))
     assert(donationState.owner.equals(owner.publicKey))
   });
+
+  it("Test chrt token", async () => {
+    await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(payer.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
+
+    const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+    chrtMint = await createMint(provider.connection, payer, statePda, null, 3);
+  })
 
   it("Test fundraising creating", async () => {
     await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(fundraisingUserAccount.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
@@ -80,6 +93,8 @@ describe("solana_donation", () => {
   it("Test donation", async () => {
     await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(donater.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
 
+    const initialDonaterBalance = await provider.connection.getBalance(donater.publicKey);
+
     const [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
     const fundraisingId = new BN(0);
@@ -90,16 +105,25 @@ describe("solana_donation", () => {
 
     const sumToDonate = new anchor.BN(1000);
 
-    await program.methods.donate(sumToDonate, fundraisingId).accounts({
+    const tokenAccount = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      payer,
+      chrtMint,
+      referral.publicKey
+    );
+
+    await program.methods.donate(sumToDonate, fundraisingId, referral.publicKey).accounts({
       donater: donater.publicKey,
       donaterInfo: donaterInfo,
       donationService: donationAccount,
-      fundraising: fundraisingPda
+      fundraising: fundraisingPda,
+      chrtMint: chrtMint,
+      referrerChrtAccount: tokenAccount.address
     }).signers([donater]).rpc()
 
     const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
-
     assert(fundraisingState.totalSum.eq(sumToDonate));
+    const finaleDonaterBalance = await provider.connection.getBalance(donater.publicKey);
+    assert(initialDonaterBalance - finaleDonaterBalance >= sumToDonate.toNumber());
   })
-
 });
