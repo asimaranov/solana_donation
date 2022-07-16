@@ -3,7 +3,7 @@ import { Program, web3 } from "@project-serum/anchor";
 import { BN } from "bn.js";
 import { assert } from "chai";
 import { SolanaDonation } from "../target/types/solana_donation";
-import { approve, createMint, getOrCreateAssociatedTokenAccount, mintTo, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { approve, createMint, getAccount, getOrCreateAssociatedTokenAccount, mintTo, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 describe("solana_donation", () => {
 
@@ -13,7 +13,7 @@ describe("solana_donation", () => {
 
   const owner = (program.provider as anchor.AnchorProvider).wallet;
 
-  const fundraisingUserAccount = web3.Keypair.generate();
+  const fundraisingOwnerAccount = web3.Keypair.generate();
   const payer = web3.Keypair.generate();
 
   const donater = web3.Keypair.generate();
@@ -45,7 +45,7 @@ describe("solana_donation", () => {
   })
 
   it("Test fundraising creating", async () => {
-    await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(fundraisingUserAccount.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
+    await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(fundraisingOwnerAccount.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
 
     const [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
@@ -54,15 +54,15 @@ describe("solana_donation", () => {
     const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), donationState.fundraisingsNum.toBuffer('le', 8)], program.programId);
 
     await program.methods.createFundraising().accounts({
-      user: fundraisingUserAccount.publicKey,
+      owner: fundraisingOwnerAccount.publicKey,
       donationService: donationAccount,
       fundraising: fundraisingPda
-    }).signers([fundraisingUserAccount]).rpc();
+    }).signers([fundraisingOwnerAccount]).rpc();
 
     let fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
     assert(fundraisingState.totalSum.eq(new anchor.BN(0)));
     assert(fundraisingState.id.eq(new anchor.BN(0)));
-    assert(fundraisingState.owner.equals(fundraisingUserAccount.publicKey));
+    assert(fundraisingState.owner.equals(fundraisingOwnerAccount.publicKey));
 
     let donationState1 = await program.account.donationService.fetch(donationAccount);
     assert(donationState1.fundraisingsNum.eq(new anchor.BN(1)));
@@ -76,15 +76,15 @@ describe("solana_donation", () => {
     const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), donationState.fundraisingsNum.toBuffer('le', 8)], program.programId);
 
     await program.methods.createFundraising().accounts({
-      user: fundraisingUserAccount.publicKey,
+      owner: fundraisingOwnerAccount.publicKey,
       donationService: donationAccount,
       fundraising: fundraisingPda
-    }).signers([fundraisingUserAccount]).rpc();
+    }).signers([fundraisingOwnerAccount]).rpc();
 
     let fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
     assert(fundraisingState.totalSum.eq(new anchor.BN(0)));
     assert(fundraisingState.id.eq(new anchor.BN(1)));
-    assert(fundraisingState.owner.equals(fundraisingUserAccount.publicKey));
+    assert(fundraisingState.owner.equals(fundraisingOwnerAccount.publicKey));
 
     let donationState2 = await program.account.donationService.fetch(donationAccount);
     assert(donationState2.fundraisingsNum.eq(new anchor.BN(2)));
@@ -126,6 +126,31 @@ describe("solana_donation", () => {
     const finaleDonaterBalance = await provider.connection.getBalance(donater.publicKey);
     assert(initialDonaterBalance - finaleDonaterBalance >= sumToDonate.toNumber());
 
-  })
+    const tokenAccountInfo = await getAccount(
+      provider.connection,
+      tokenAccount.address
+    )
+    
+    assert(sumToDonate.mul(new BN(101)).eq(new BN(tokenAccountInfo.amount.toString())));
+  });
+
+  it("Test withraw", async () => {
+    await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(donater.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
+
+    const initialDonaterBalance = await provider.connection.getBalance(donater.publicKey);
+
+    const [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+
+    const fundraisingId = new BN(0);
+
+    const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), fundraisingId.toBuffer('le', 8)], program.programId);
+
+    await program.methods.withdraw(fundraisingId).accounts({
+      donationService: donationAccount,
+      fundraising: fundraisingPda,
+      fundraisingOwner: fundraisingOwnerAccount.publicKey
+    }).signers([fundraisingOwnerAccount]).rpc()
+
+  });
 
 });

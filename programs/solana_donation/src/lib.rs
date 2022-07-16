@@ -36,10 +36,10 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 pub struct CreateFundraising<'info> {
     #[account(mut)]
-    pub user: Signer<'info>,
+    pub owner: Signer<'info>,
     #[account(mut)]
     pub donation_service: Account<'info, DonationService>,
-    #[account(init, payer=user, space = 8 + 32+8+8+1, seeds=[b"fundraising", donation_service.fundraisings_num.to_le_bytes().as_ref()], bump)]
+    #[account(init, payer=owner, space = 8 + 32+8+8+1, seeds=[b"fundraising", donation_service.fundraisings_num.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
     
     pub system_program: Program<'info, System>
@@ -64,9 +64,29 @@ pub struct Donate<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+#[instruction(fundraising_id: u64)]
+pub struct Withdraw<'info> {
+    #[account(mut, seeds=[b"state"], bump)]
+    pub donation_service: Account<'info, DonationService>,
+    #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
+    pub fundraising: Account<'info, Fundraising>,
+    #[account(mut)]
+    pub fundraising_owner: Signer<'info>,
+    pub system_program: Program<'info, System>,
+
+}
+
+#[error_code]
+pub enum DonationError {
+    #[msg("Only funding owner can call this")]
+    NotFundingOwner,
+}
+
 #[program]
 pub mod solana_donation {
-    use anchor_lang::solana_program::{system_instruction, program::invoke};
+
+    use anchor_lang::solana_program::{system_instruction, program::{invoke, invoke_signed}};
     use anchor_spl::token::{Mint, MintTo, self};
 
     use super::*;
@@ -86,7 +106,7 @@ pub mod solana_donation {
         let fundraising_account = &mut ctx.accounts.fundraising;
         fundraising_account.bump = *ctx.bumps.get("fundraising").unwrap();
         fundraising_account.id = new_fundraising_id;
-        fundraising_account.owner = ctx.accounts.user.key();
+        fundraising_account.owner = ctx.accounts.owner.key();
         Ok(())
     }
 
@@ -123,6 +143,24 @@ pub mod solana_donation {
         token::mint_to(cpi_ctx, amount * 101)?;
         
 
+        Ok(())
+    }
+
+    pub fn withdraw(ctx: Context<Withdraw>, fundraising_id: u64) -> Result<()> {
+        let fundraising_account = &mut ctx.accounts.fundraising;
+        let fundraising_owner_account = &mut ctx.accounts.fundraising_owner;
+
+        require!(fundraising_account.owner == fundraising_owner_account.key(), DonationError::NotFundingOwner);
+
+        let transfer_instruction = 
+        system_instruction::transfer(&fundraising_account.key(), &fundraising_owner_account.key(), fundraising_account.total_sum);
+
+        let fundraising_bump = fundraising_account.bump.to_le_bytes();
+        let fundraising_id_packed = fundraising_id.to_le_bytes();
+                
+        invoke_signed(&transfer_instruction, &[fundraising_account.to_account_info(), fundraising_owner_account.to_account_info()], 
+        &[&[ &b"fundraising".as_ref(), fundraising_id_packed.as_ref(), fundraising_bump.as_ref() ]])?;
+        fundraising_account.total_sum = 0;
         Ok(())
     }
 
