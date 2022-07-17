@@ -23,11 +23,14 @@ describe("solana_donation", () => {
 
   const provider = anchor.getProvider()
 
+  const ownerFeePercent = new BN(1);
+  const freeChrtThreshold = new BN(1);
+
   it("Test initialization", async () => {
 
     const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
-    await program.methods.initialize().accounts({
+    await program.methods.initialize(ownerFeePercent, freeChrtThreshold).accounts({
       donationService: statePda,
       owner: owner.publicKey
     }).signers([]).rpc();
@@ -122,7 +125,8 @@ describe("solana_donation", () => {
     }).signers([donater]).rpc()
 
     const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
-    assert(fundraisingState.totalSum.eq(sumToDonate));
+    
+    assert(fundraisingState.totalSum.eq(sumToDonate.mul(new BN(100).sub(ownerFeePercent)).div(new BN(100))));
     const finaleDonaterBalance = await provider.connection.getBalance(donater.publicKey);
     assert(initialDonaterBalance - finaleDonaterBalance >= sumToDonate.toNumber());
 
