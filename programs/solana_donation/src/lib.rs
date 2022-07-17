@@ -34,13 +34,13 @@ impl Fundraising {
 #[account]
 pub struct DonaterInfo {
     pub total_sum: u64,
+    pub chrt_wallet: Pubkey,
     pub bump: u8,
 }
 
 impl DonaterInfo {
-    pub const MAX_SIZE: usize = 8+1;
+    pub const MAX_SIZE: usize = 8+32+1;
 }
-
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
@@ -76,6 +76,8 @@ pub struct Donate<'info> {
     pub fundraising: Account<'info, Fundraising>,
     #[account(mut)]
     pub chrt_mint: Account<'info, Mint>,
+    #[account(mut, token::mint=chrt_mint)]
+    pub donater_chrt_account: Account<'info, TokenAccount>,
     #[account(mut, token::mint=chrt_mint)]
     pub referrer_chrt_account: Account<'info, TokenAccount>,
     pub system_program: Program<'info, System>,
@@ -125,8 +127,6 @@ pub enum DonationError {
     FundraisingFinished,
     #[msg("Only donation service owner can call this")]
     NotOwner,
-
-
 }
 
 #[program]
@@ -164,8 +164,9 @@ pub mod solana_donation {
         require!(!fundraising_account.is_finished, DonationError::FundraisingFinished);
 
         let donation_account = &mut ctx.accounts.donation_service;
-
         let donater_account = &mut ctx.accounts.donater;
+        let donater_info_account = &mut ctx.accounts.donater_info;
+        let donater_chrt_account = &mut ctx.accounts.donater_chrt_account;
 
         let fee: u64 = if fundraising_account.total_chrt_sum < donation_account.free_chrt_threshold {amount / 100 * donation_account.owner_fee_percent} else {0};
         let sum_to_donate = amount - fee;
@@ -188,6 +189,8 @@ pub mod solana_donation {
 
         fundraising_account.total_sum += sum_to_donate;
         donation_account.total_fee += fee;
+        donater_info_account.total_sum += amount;
+        donater_info_account.chrt_wallet = donater_chrt_account.key();
 
         let state_bump = donation_account.bump.to_le_bytes();
 
@@ -204,8 +207,6 @@ pub mod solana_donation {
             authority: ctx.accounts.donation_service.to_account_info(),
         }, outer.as_slice());
         token::mint_to(cpi_ctx, amount * 101)?;
-        
-
         Ok(())
     }
 

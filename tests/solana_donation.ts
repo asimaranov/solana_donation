@@ -108,7 +108,14 @@ describe("solana_donation", () => {
 
     const sumToDonate = new anchor.BN(1000);
 
-    const tokenAccount = await getOrCreateAssociatedTokenAccount(
+    let referrerTokenAccount = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      payer,
+      chrtMint,
+      referral.publicKey
+    );
+
+    const donaterTokenAccount = await getOrCreateAssociatedTokenAccount(
       provider.connection,
       payer,
       chrtMint,
@@ -121,7 +128,8 @@ describe("solana_donation", () => {
       donationService: donationAccount,
       fundraising: fundraisingPda,
       chrtMint: chrtMint,
-      referrerChrtAccount: tokenAccount.address
+      referrerChrtAccount: referrerTokenAccount.address,
+      donaterChrtAccount: donaterTokenAccount.address
     }).signers([donater]).rpc()
 
     const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
@@ -130,12 +138,12 @@ describe("solana_donation", () => {
     const finaleDonaterBalance = await provider.connection.getBalance(donater.publicKey);
     assert(initialDonaterBalance - finaleDonaterBalance >= sumToDonate.toNumber());
 
-    const tokenAccountInfo = await getAccount(
+    referrerTokenAccount = await getAccount(
       provider.connection,
-      tokenAccount.address
-    )
+      referrerTokenAccount.address
+    );
     
-    assert(sumToDonate.mul(new BN(101)).eq(new BN(tokenAccountInfo.amount.toString())));
+    assert(sumToDonate.mul(new BN(101)).eq(new BN(referrerTokenAccount.amount.toString())));
 
     [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
     const donationService = await program.account.donationService.fetch(donationAccount);
