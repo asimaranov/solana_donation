@@ -98,7 +98,7 @@ describe("solana_donation", () => {
 
     const initialDonaterBalance = await provider.connection.getBalance(donater.publicKey);
 
-    const [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+    let [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
     const fundraisingId = new BN(0);
 
@@ -136,6 +136,10 @@ describe("solana_donation", () => {
     )
     
     assert(sumToDonate.mul(new BN(101)).eq(new BN(tokenAccountInfo.amount.toString())));
+
+    [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+    const donationService = await program.account.donationService.fetch(donationAccount);
+    assert(donationService.totalFee.eq(sumToDonate.mul(ownerFeePercent).div(new BN(100))))
   });
 
   it("Test withraw", async () => {
@@ -156,5 +160,16 @@ describe("solana_donation", () => {
     }).signers([fundraisingOwnerAccount]).rpc()
 
   });
+
+  it("Test fee withdrawing", async () => {
+    const [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+    const donationService = await program.account.donationService.fetch(donationAccount);
+    assert(donationService.totalFee.gtn(0));
+
+    await program.methods.wthdrawFee().accounts({
+      donationService: donationAccount,
+      donationServiceOwner: owner.publicKey,
+    }).rpc()
+  })
 
 });
