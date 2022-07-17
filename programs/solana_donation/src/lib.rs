@@ -105,8 +105,17 @@ pub struct Withdraw<'info> {
     #[account(mut)]
     pub fundraising_owner: Signer<'info>,
     pub system_program: Program<'info, System>,
-
 }
+
+#[derive(Accounts)]
+pub struct WithdrawFee<'info> {
+    #[account(mut, seeds=[b"state"], bump)]
+    pub donation_service: Account<'info, DonationService>,
+    #[account(mut)]
+    pub donation_service_owner: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 
 #[error_code]
 pub enum DonationError {
@@ -114,13 +123,16 @@ pub enum DonationError {
     NotFundingOwner,
     #[msg("Fundraising has been finished")]
     FundraisingFinished,
+    #[msg("Only donation service owner can call this")]
+    NotOwner,
+
 
 }
 
 #[program]
 pub mod solana_donation {
 
-    use anchor_lang::solana_program::{system_instruction, program::{invoke, invoke_signed}};
+    use anchor_lang::{solana_program::{system_instruction, program::{invoke, invoke_signed}}, system_program};
     use anchor_spl::token::{Mint, MintTo, self, Transfer};
 
     use super::*;
@@ -236,6 +248,28 @@ pub mod solana_donation {
         invoke_signed(&transfer_instruction, &[fundraising_account.to_account_info(), fundraising_owner_account.to_account_info()], 
         &[&[ &b"fundraising".as_ref(), fundraising_id_packed.as_ref(), fundraising_bump.as_ref() ]])?;
         fundraising_account.total_sum = 0;
+        Ok(())
+    }
+
+    pub fn wthdraw_fee(ctx: Context<WithdrawFee>) -> Result<()>{
+        let donation_account = &mut ctx.accounts.donation_service;
+        let service_owner_account = &mut ctx.accounts.donation_service_owner;
+
+        require!(service_owner_account.key() == donation_account.owner, DonationError::NotOwner);
+
+        let transfer_instruction = system_instruction::transfer(&donation_account.key(), &service_owner_account.key(), donation_account.total_fee);
+
+        let state_bump = donation_account.bump.to_le_bytes();
+
+        let inner = vec![
+            b"state".as_ref(),
+            state_bump.as_ref()
+        ];
+        let outer = vec![inner.as_slice()];
+
+        invoke_signed(&transfer_instruction, &[donation_account.to_account_info(), service_owner_account.to_account_info()], outer.as_slice())?;
+
+        donation_account.total_fee = 0;
         Ok(())
     }
 
