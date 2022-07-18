@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount, Mint};
-
+use borsh::{BorshSerialize, BorshDeserialize};
 declare_id!("2qqDQ8RadpzattcT4mAcxuzrLjrvsmz3NXDqf72pmyYR");
 
 #[account]
@@ -17,6 +17,16 @@ impl DonationService {
     pub const MAX_SIZE: usize = 32 + 8*4 + 1;
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+pub struct DonaterTopInfo {
+    pub total_sum: u64,
+    pub chrt_wallet: Pubkey,
+}
+
+impl DonaterTopInfo {
+    pub const MAX_SIZE: usize = 8 + 32;
+}
+
 #[account]
 pub struct Fundraising {
     pub owner: Pubkey,
@@ -24,11 +34,12 @@ pub struct Fundraising {
     pub total_sum: u64,
     pub total_chrt_sum: u64,
     pub is_finished: bool,
+    pub top_donaters: [Option<DonaterTopInfo>; 3],
     pub bump: u8
 }
 
 impl Fundraising {
-    pub const MAX_SIZE: usize = 32 + 8*3 + 1*3;
+    pub const MAX_SIZE: usize = 32 + 8*3 + 1*3 + DonaterInfo::MAX_SIZE * 3;
 }
 
 #[account]
@@ -79,6 +90,7 @@ pub struct Donate<'info> {
     pub donater_chrt_account: Account<'info, TokenAccount>,
     #[account(mut, token::mint=chrt_mint)]
     pub referrer_chrt_account: Account<'info, TokenAccount>,
+
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
 }
@@ -126,13 +138,15 @@ pub enum DonationError {
     FundraisingFinished,
     #[msg("Only donation service owner can call this")]
     NotOwner,
+    #[msg("Unable to donate 0 lamports")]
+    ZeroDonation,
 }
 
 #[program]
 pub mod solana_donation {
 
     use anchor_lang::{solana_program::{system_instruction, program::{invoke, invoke_signed}}, system_program};
-    use anchor_spl::token::{Mint, MintTo, self, Transfer};
+    use anchor_spl::token::{MintTo, self, Transfer};
 
     use super::*;
 
@@ -158,6 +172,9 @@ pub mod solana_donation {
     }
 
     pub fn donate(ctx: Context<Donate>, amount: u64, fundraising_id: u64) -> Result<()> {
+
+        require!(amount > 0, DonationError::ZeroDonation);
+
         let fundraising_account = &mut ctx.accounts.fundraising;
 
         require!(!fundraising_account.is_finished, DonationError::FundraisingFinished);
@@ -190,6 +207,21 @@ pub mod solana_donation {
         donation_account.total_fee += fee;
         donater_info_account.total_sum += amount;
         donater_info_account.chrt_wallet = donater_chrt_account.key();
+
+        if donater_info_account.total_sum > fundraising_account.top_donaters[2].map_or(0, |x| x.total_sum){
+            let mut top_donaters = [fundraising_account.top_donaters[0], 
+            fundraising_account.top_donaters[1], 
+            Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, chrt_wallet: donater_info_account.chrt_wallet }), 
+            fundraising_account.top_donaters[2], ];
+            top_donaters.sort_by(|b, a|{
+                let a_sum = a.map_or(0, |x|x.total_sum);
+                let b_sum = b.map_or(0, |x|x.total_sum);
+                a_sum.cmp(&b_sum)
+            });
+            fundraising_account.top_donaters[0] = top_donaters[0];
+            fundraising_account.top_donaters[1] = top_donaters[1];
+            fundraising_account.top_donaters[2] = top_donaters[2];
+        }
 
         let state_bump = donation_account.bump.to_le_bytes();
 
