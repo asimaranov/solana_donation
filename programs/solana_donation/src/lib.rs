@@ -3,6 +3,16 @@ use anchor_spl::token::{Token, TokenAccount, Mint};
 use borsh::{BorshSerialize, BorshDeserialize};
 declare_id!("2qqDQ8RadpzattcT4mAcxuzrLjrvsmz3NXDqf72pmyYR");
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+pub struct DonaterTopInfo {
+    pub total_sum: u64,
+    pub chrt_wallet: Pubkey,
+}
+
+impl DonaterTopInfo {
+    pub const MAX_SIZE: usize = 8 + 32;
+}
+
 #[account]
 pub struct DonationService {
     pub owner: Pubkey,
@@ -13,21 +23,12 @@ pub struct DonationService {
     pub close_chrt_threshold: u64,
     pub reward_period_seconds: u64,
     pub reward_chrt_amount: u64, 
+    pub top_donaters: [Option<DonaterTopInfo>; 1],
     pub bump: u8
 }
 
 impl DonationService {
-    pub const MAX_SIZE: usize = 32 + 8*7 + 1;
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
-pub struct DonaterTopInfo {
-    pub total_sum: u64,
-    pub chrt_wallet: Pubkey,
-}
-
-impl DonaterTopInfo {
-    pub const MAX_SIZE: usize = 8 + 32;
+    pub const MAX_SIZE: usize = 32 + 8*7 + DonaterTopInfo::MAX_SIZE*1 + 1;
 }
 
 #[account]
@@ -42,7 +43,7 @@ pub struct Fundraising {
 }
 
 impl Fundraising {
-    pub const MAX_SIZE: usize = 32 + 8*3 + 1*3 + DonaterInfo::MAX_SIZE * 3;
+    pub const MAX_SIZE: usize = 32 + 8*3 + 1*3 + DonaterTopInfo::MAX_SIZE * 3;
 }
 
 #[account]
