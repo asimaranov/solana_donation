@@ -95,6 +95,7 @@ pub struct Donate<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+
 #[derive(Accounts)]
 #[instruction(amount: u64, fundraising_id: u64)]
 pub struct DonateCHRT<'info> {
