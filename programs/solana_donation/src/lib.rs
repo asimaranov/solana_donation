@@ -19,8 +19,8 @@ pub struct DonationService {
     pub fundraisings_num: u64,
     pub total_fee: u64,
     pub owner_fee_percent: u64,
-    pub free_chrt_threshold: u64,
-    pub close_chrt_threshold: u64,
+    pub no_fee_chrt_threshold: u64,
+    pub finish_chrt_threshold: u64,
     pub reward_period_seconds: u64,
     pub reward_chrt_amount: u64, 
     pub top_donaters: [Option<DonaterTopInfo>; 1],
@@ -36,14 +36,15 @@ pub struct Fundraising {
     pub owner: Pubkey,
     pub id: u64,
     pub total_sum: u64,
-    pub total_chrt_sum: u64,
+    pub total_no_fee_chrt_sum: u64,
+    pub total_finish_chrt_sum: u64,
     pub is_finished: bool,
     pub top_donaters: [Option<DonaterTopInfo>; 3],
     pub bump: u8
 }
 
 impl Fundraising {
-    pub const MAX_SIZE: usize = 32 + 8*3 + 1*3 + DonaterTopInfo::MAX_SIZE * 3;
+    pub const MAX_SIZE: usize = 32 + 8*4 + 1*3 + DonaterTopInfo::MAX_SIZE * 3;
 }
 
 #[account]
@@ -155,13 +156,13 @@ pub mod solana_donation {
 
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>, reward_period_seconds: u64, owner_fee_percent: u64, reward_chrt_amount: u64, free_chrt_threshold: u64, close_chrt_threshold: u64) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, reward_period_seconds: u64, owner_fee_percent: u64, reward_chrt_amount: u64, no_fee_chrt_threshold: u64, finish_chrt_threshold: u64) -> Result<()> {
         let donation_service_account = &mut ctx.accounts.donation_service;
         donation_service_account.reward_period_seconds = reward_period_seconds;
         donation_service_account.owner_fee_percent = owner_fee_percent;
         donation_service_account.reward_chrt_amount = reward_chrt_amount;
-        donation_service_account.free_chrt_threshold = free_chrt_threshold;
-        donation_service_account.close_chrt_threshold = close_chrt_threshold;
+        donation_service_account.no_fee_chrt_threshold = no_fee_chrt_threshold;
+        donation_service_account.finish_chrt_threshold = finish_chrt_threshold;
 
         donation_service_account.owner = ctx.accounts.owner.key();
         donation_service_account.bump = *ctx.bumps.get("donation_service").unwrap();
@@ -194,7 +195,7 @@ pub mod solana_donation {
         let donater_info_account = &mut ctx.accounts.donater_info;
         let donater_chrt_account = &mut ctx.accounts.donater_chrt_account;
 
-        let fee: u64 = if fundraising_account.total_chrt_sum < donation_account.free_chrt_threshold {amount / 100 * donation_account.owner_fee_percent} else {0};
+        let fee: u64 = if fundraising_account.total_no_fee_chrt_sum < donation_account.no_fee_chrt_threshold {amount / 100 * donation_account.owner_fee_percent} else {0};
         let sum_to_donate = amount - fee;
 
         let donation_transfer_instruction = system_instruction::transfer(&donater_account.key(), &fundraising_account.key(), sum_to_donate);
@@ -251,7 +252,7 @@ pub mod solana_donation {
         Ok(())
     }
 
-    pub fn donate_chrt(ctx: Context<DonateCHRT>, amount: u64, fundraising_id: u64) -> Result<()>{
+    pub fn donate_chrt(ctx: Context<DonateCHRT>, amount: u64, fundraising_id: u64, no_fee: bool) -> Result<()>{
         let fundraising_account = &mut ctx.accounts.fundraising;
         let donater_account = &mut ctx.accounts.donater;
         let donation_account = &mut ctx.accounts.donation_service;
@@ -269,7 +270,11 @@ pub mod solana_donation {
             outer.as_slice()
         );
         token::transfer(cpi_ctx, amount)?;
-        fundraising_account.total_chrt_sum += amount;
+        if no_fee {
+            fundraising_account.total_no_fee_chrt_sum += amount;
+        } else {
+            fundraising_account.total_finish_chrt_sum += amount;
+        }
         Ok(())
     }
 

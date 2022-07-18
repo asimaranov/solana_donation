@@ -27,14 +27,14 @@ describe("solana_donation", () => {
 
   const ownerFeePercent = new BN(1);
   const rewardChrtAmount = new BN(1);
-  const freeChrtThreshold = new BN(1);
-  const closeChrtThreshold = new BN(1);
+  const noFeeChrtThreshold = new BN(1);
+  const finishChrtThreshold = new BN(1);
 
   it("Test initialization", async () => {
 
     const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
-    await program.methods.initialize(rewardPeriodSeconds, ownerFeePercent, rewardChrtAmount, freeChrtThreshold, closeChrtThreshold).accounts({
+    await program.methods.initialize(rewardPeriodSeconds, ownerFeePercent, rewardChrtAmount, noFeeChrtThreshold, finishChrtThreshold).accounts({
       donationService: statePda,
       owner: owner.publicKey
     }).signers([]).rpc();
@@ -138,28 +138,26 @@ describe("solana_donation", () => {
       donaterChrtAccount: donaterTokenAccount.address
     }).signers([donater]).rpc()
 
-    // const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
+    const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
     
-    // assert(fundraisingState.totalSum.eq(sumToDonate.mul(new BN(100).sub(ownerFeePercent)).div(new BN(100))));
-    // const finaleDonaterBalance = await provider.connection.getBalance(donater.publicKey);
-    // assert(initialDonaterBalance - finaleDonaterBalance >= sumToDonate.toNumber());
+    assert(fundraisingState.totalSum.eq(sumToDonate.mul(new BN(100).sub(ownerFeePercent)).div(new BN(100))));
+    const finaleDonaterBalance = await provider.connection.getBalance(donater.publicKey);
+    assert(initialDonaterBalance - finaleDonaterBalance >= sumToDonate.toNumber());
 
-    // referrerTokenAccount = await getAccount(
-    //   provider.connection,
-    //   referrerTokenAccount.address
-    // );
+    referrerTokenAccount = await getAccount(
+      provider.connection,
+      referrerTokenAccount.address
+    );
     
-    // assert(sumToDonate.mul(new BN(101)).eq(new BN(referrerTokenAccount.amount.toString())));
+    assert(sumToDonate.mul(new BN(101)).eq(new BN(referrerTokenAccount.amount.toString())));
 
-    // [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
-    // const donationService = await program.account.donationService.fetch(donationAccount);
-    // assert(donationService.totalFee.eq(sumToDonate.mul(ownerFeePercent).div(new BN(100))))
+    [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+    const donationService = await program.account.donationService.fetch(donationAccount);
+    assert(donationService.totalFee.eq(sumToDonate.mul(ownerFeePercent).div(new BN(100))))
   });
 
   it("Test withrawing", async () => {
     await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(donater.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
-
-    const initialDonaterBalance = await provider.connection.getBalance(donater.publicKey);
 
     const [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
