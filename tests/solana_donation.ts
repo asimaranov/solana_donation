@@ -23,14 +23,18 @@ describe("solana_donation", () => {
 
   const provider = anchor.getProvider()
 
+  const rewardPeriodSeconds = new BN(1);
+
   const ownerFeePercent = new BN(1);
+  const rewardChrtAmount = new BN(1);
   const freeChrtThreshold = new BN(1);
+  const closeChrtThreshold = new BN(1);
 
   it("Test initialization", async () => {
 
     const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
-    await program.methods.initialize(ownerFeePercent, freeChrtThreshold).accounts({
+    await program.methods.initialize(rewardPeriodSeconds, ownerFeePercent, rewardChrtAmount, freeChrtThreshold, closeChrtThreshold).accounts({
       donationService: statePda,
       owner: owner.publicKey
     }).signers([]).rpc();
@@ -185,15 +189,10 @@ describe("solana_donation", () => {
   it("Test top donation tracking", async () => {
     await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(donater.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
 
-    const initialDonaterBalance = await provider.connection.getBalance(donater.publicKey);
-
-    const [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
-
     const fundraisingId = new BN(0);
 
     const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), fundraisingId.toBuffer('le', 8)], program.programId);
     const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
-    console.log(fundraisingState.topDonaters[0].totalSum);
     assert(fundraisingState.topDonaters[0].totalSum.eq(new BN(1000)));
   });
 

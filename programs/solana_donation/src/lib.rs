@@ -10,11 +10,14 @@ pub struct DonationService {
     pub total_fee: u64,
     pub owner_fee_percent: u64,
     pub free_chrt_threshold: u64,
+    pub close_chrt_threshold: u64,
+    pub reward_period_seconds: u64,
+    pub reward_chrt_amount: u64, 
     pub bump: u8
 }
 
 impl DonationService {
-    pub const MAX_SIZE: usize = 32 + 8*4 + 1;
+    pub const MAX_SIZE: usize = 32 + 8*7 + 1;
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
@@ -151,12 +154,17 @@ pub mod solana_donation {
 
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>, owner_fee_percent: u64, free_chrt_threshold: u64) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, reward_period_seconds: u64, owner_fee_percent: u64, reward_chrt_amount: u64, free_chrt_threshold: u64, close_chrt_threshold: u64) -> Result<()> {
         let donation_service_account = &mut ctx.accounts.donation_service;
+        donation_service_account.reward_period_seconds = reward_period_seconds;
+        donation_service_account.owner_fee_percent = owner_fee_percent;
+        donation_service_account.reward_chrt_amount = reward_chrt_amount;
+        donation_service_account.free_chrt_threshold = free_chrt_threshold;
+        donation_service_account.close_chrt_threshold = close_chrt_threshold;
+
         donation_service_account.owner = ctx.accounts.owner.key();
         donation_service_account.bump = *ctx.bumps.get("donation_service").unwrap();
-        donation_service_account.owner_fee_percent = owner_fee_percent;
-        donation_service_account.free_chrt_threshold = free_chrt_threshold;
+
         Ok(())
     }
 
@@ -281,6 +289,7 @@ pub mod solana_donation {
     }
 
     pub fn wthdraw_fee(ctx: Context<WithdrawFee>) -> Result<()>{
+
         let donation_account = &mut ctx.accounts.donation_service;
         let service_owner_account = &mut ctx.accounts.donation_service_owner;
 
