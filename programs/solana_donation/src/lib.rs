@@ -42,10 +42,6 @@ impl DonaterInfo {
     pub const MAX_SIZE: usize = 8+32+1;
 }
 
-#[account]
-pub struct FundraisingWallet {
-}
-
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     #[account(init, payer=owner, space=8 + DonationService::MAX_SIZE, seeds=[b"state"], bump)]
