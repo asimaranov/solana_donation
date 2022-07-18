@@ -56,11 +56,13 @@ describe("solana_donation", () => {
 
     const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), donationState.fundraisingsNum.toBuffer('le', 8)], program.programId);
 
+
+
     await program.methods.createFundraising().accounts({
       owner: fundraisingOwnerAccount.publicKey,
       donationService: donationAccount,
       fundraising: fundraisingPda
-    }).signers([fundraisingOwnerAccount]).rpc();
+        }).signers([fundraisingOwnerAccount]).rpc();
 
     let fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
     assert(fundraisingState.totalSum.eq(new anchor.BN(0)));
@@ -81,8 +83,8 @@ describe("solana_donation", () => {
     await program.methods.createFundraising().accounts({
       owner: fundraisingOwnerAccount.publicKey,
       donationService: donationAccount,
-      fundraising: fundraisingPda
-    }).signers([fundraisingOwnerAccount]).rpc();
+      fundraising: fundraisingPda,
+        }).signers([fundraisingOwnerAccount]).rpc();
 
     let fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
     assert(fundraisingState.totalSum.eq(new anchor.BN(0)));
@@ -150,7 +152,7 @@ describe("solana_donation", () => {
     assert(donationService.totalFee.eq(sumToDonate.mul(ownerFeePercent).div(new BN(100))))
   });
 
-  it("Test withraw", async () => {
+  it("Test withrawing", async () => {
     await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(donater.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
 
     const initialDonaterBalance = await provider.connection.getBalance(donater.publicKey);
@@ -164,7 +166,7 @@ describe("solana_donation", () => {
     await program.methods.withdraw(fundraisingId).accounts({
       donationService: donationAccount,
       fundraising: fundraisingPda,
-      fundraisingOwner: fundraisingOwnerAccount.publicKey
+      fundraisingOwner: fundraisingOwnerAccount.publicKey,
     }).signers([fundraisingOwnerAccount]).rpc()
 
   });

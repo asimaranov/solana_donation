@@ -28,7 +28,7 @@ pub struct Fundraising {
 }
 
 impl Fundraising {
-    pub const MAX_SIZE: usize = 32 + 8*3 + 1*2;
+    pub const MAX_SIZE: usize = 32 + 8*3 + 1*3;
 }
 
 #[account]
@@ -40,6 +40,10 @@ pub struct DonaterInfo {
 
 impl DonaterInfo {
     pub const MAX_SIZE: usize = 8+32+1;
+}
+
+#[account]
+pub struct FundraisingWallet {
 }
 
 #[derive(Accounts)]
@@ -59,7 +63,6 @@ pub struct CreateFundraising<'info> {
     pub donation_service: Account<'info, DonationService>,
     #[account(init, payer=owner, space = 8 + Fundraising::MAX_SIZE, seeds=[b"fundraising", donation_service.fundraisings_num.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
-    
     pub system_program: Program<'info, System>
 }
 
@@ -234,20 +237,16 @@ pub mod solana_donation {
 
     pub fn withdraw(ctx: Context<Withdraw>, fundraising_id: u64) -> Result<()> {
         let fundraising_account = &mut ctx.accounts.fundraising;
+
         let fundraising_owner_account = &mut ctx.accounts.fundraising_owner;
 
         fundraising_account.is_finished = true;
 
         require!(fundraising_account.owner == fundraising_owner_account.key(), DonationError::NotFundingOwner);
-
-        let transfer_instruction = 
-        system_instruction::transfer(&fundraising_account.key(), &fundraising_owner_account.key(), fundraising_account.total_sum);
-
-        let fundraising_bump = fundraising_account.bump.to_le_bytes();
-        let fundraising_id_packed = fundraising_id.to_le_bytes();
                 
-        invoke_signed(&transfer_instruction, &[fundraising_account.to_account_info(), fundraising_owner_account.to_account_info()], 
-        &[&[ &b"fundraising".as_ref(), fundraising_id_packed.as_ref(), fundraising_bump.as_ref() ]])?;
+        **fundraising_account.to_account_info().try_borrow_mut_lamports()? -= fundraising_account.total_sum;
+        **fundraising_owner_account.to_account_info().try_borrow_mut_lamports()? += fundraising_account.total_sum;
+    
         fundraising_account.total_sum = 0;
         Ok(())
     }
@@ -258,17 +257,8 @@ pub mod solana_donation {
 
         require!(service_owner_account.key() == donation_account.owner, DonationError::NotOwner);
 
-        let transfer_instruction = system_instruction::transfer(&donation_account.key(), &service_owner_account.key(), donation_account.total_fee);
-
-        let state_bump = donation_account.bump.to_le_bytes();
-
-        let inner = vec![
-            b"state".as_ref(),
-            state_bump.as_ref()
-        ];
-        let outer = vec![inner.as_slice()];
-
-        invoke_signed(&transfer_instruction, &[donation_account.to_account_info(), service_owner_account.to_account_info()], outer.as_slice())?;
+        **donation_account.to_account_info().try_borrow_mut_lamports()? -= donation_account.total_fee;
+        **service_owner_account.to_account_info().try_borrow_mut_lamports()? += donation_account.total_fee;
 
         donation_account.total_fee = 0;
         Ok(())
