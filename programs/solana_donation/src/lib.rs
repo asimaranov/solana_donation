@@ -23,12 +23,12 @@ pub struct DonationService {
     pub finish_chrt_threshold: u64,
     pub reward_period_seconds: u64,
     pub reward_chrt_amount: u64, 
-    pub top_donaters: [Option<DonaterTopInfo>; 1],
+    pub top_donaters: [Option<DonaterTopInfo>; 10],
     pub bump: u8
 }
 
 impl DonationService {
-    pub const MAX_SIZE: usize = 32 + 8*7 + DonaterTopInfo::MAX_SIZE*1 + 1;
+    pub const MAX_SIZE: usize = 32 + 8*7 + DonaterTopInfo::MAX_SIZE*10 + 1;
 }
 
 #[account]
@@ -86,7 +86,7 @@ pub struct Donate<'info> {
     #[account(init_if_needed, payer=donater, space = 8 + DonaterInfo::MAX_SIZE, seeds = [b"donater-info", fundraising_id.to_le_bytes().as_ref(), donater.key().as_ref()], bump)]
     pub donater_info: Account<'info, DonaterInfo>,
     #[account(mut, seeds=[b"state"], bump)]
-    pub donation_service: Account<'info, DonationService>,
+    pub donation_service: Box<Account<'info, DonationService>>,
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
     #[account(mut)]
@@ -106,10 +106,14 @@ pub struct Donate<'info> {
 pub struct DonateCHRT<'info> {
     #[account(mut)]
     pub donater: Signer<'info>,
+    #[account(mut)]
+    pub donater_token_account: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub fundraising_token_account: Account<'info, TokenAccount>,
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
     #[account(mut, seeds=[b"state"], bump)]
-    pub donation_service: Account<'info, DonationService>,
+    pub donation_service: Box<Account<'info, DonationService>>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>
 }
@@ -255,6 +259,9 @@ pub mod solana_donation {
     pub fn donate_chrt(ctx: Context<DonateCHRT>, amount: u64, fundraising_id: u64, no_fee: bool) -> Result<()>{
         let fundraising_account = &mut ctx.accounts.fundraising;
         let donater_account = &mut ctx.accounts.donater;
+        let donater_token_account = &mut ctx.accounts.donater_token_account;
+        let fundraising_token_account = &mut ctx.accounts.fundraising_token_account;
+
         let donation_account = &mut ctx.accounts.donation_service;
 
         let state_bump = donation_account.bump.to_le_bytes();
@@ -266,7 +273,7 @@ pub mod solana_donation {
         let outer = vec![inner.as_slice()];
 
         let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), 
-            Transfer{ from: donater_account.to_account_info(), to: fundraising_account.to_account_info(), authority: donation_account.to_account_info() }, 
+            Transfer{ from: donater_token_account.to_account_info(), to: fundraising_token_account.to_account_info(), authority: donater_account.to_account_info() }, 
             outer.as_slice()
         );
         token::transfer(cpi_ctx, amount)?;
