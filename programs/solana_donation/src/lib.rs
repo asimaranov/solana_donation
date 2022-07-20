@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount, Mint};
-use borsh::{BorshSerialize, BorshDeserialize};
+
 declare_id!("2qqDQ8RadpzattcT4mAcxuzrLjrvsmz3NXDqf72pmyYR");
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
@@ -211,12 +211,11 @@ pub mod solana_donation {
         fundraising_account.bump = *ctx.bumps.get("fundraising").unwrap();
         fundraising_account.id = new_fundraising_id;
         fundraising_account.owner = ctx.accounts.owner.key();
-        
+
         Ok(())
     }
 
     pub fn donate(ctx: Context<Donate>, amount: u64, fundraising_id: u64) -> Result<()> {
-
         require!(amount > 0, DonationError::ZeroDonation);
 
         let fundraising_account = &mut ctx.accounts.fundraising;
@@ -353,7 +352,7 @@ pub mod solana_donation {
     }
 
     pub fn cancel_fundraising(ctx: Context<CancelFundraising>, fundraising_id: u64, fundraisings_num: u64) -> Result<()> {
-        let donation_account = & ctx.accounts.donation_service;
+        let donation_account = &ctx.accounts.donation_service;
         let fundraising_account = &mut ctx.accounts.fundraising;
 
         require!(!fundraising_account.is_finished, DonationError::FundraisingFinished);
@@ -365,7 +364,6 @@ pub mod solana_donation {
         Ok(())
     }
     pub fn wthdraw_fee(ctx: Context<WithdrawFee>) -> Result<()>{
-
         let donation_account = &mut ctx.accounts.donation_service;
         let service_owner_account = &mut ctx.accounts.donation_service_owner;
 
