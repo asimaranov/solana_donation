@@ -211,4 +211,59 @@ describe("solana_donation", () => {
     }).signers([referrer]).rpc();
   
   });
+
+  it("Test chrt donating to cancel fundraising", async () => {
+    const fundraisingId = new BN(1);
+
+    const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), fundraisingId.toBuffer('le', 8)], program.programId);
+    
+    const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+    const chrtToDonateAmount = noFeeChrtThreshold.add(new BN(1));
+
+    const fundraisingTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, fundraisingPda, true);
+    const referrerTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, referrer.publicKey);
+
+    await program.methods.donateChrt(chrtToDonateAmount, fundraisingId, false).accounts({
+      donater: referrer.publicKey,
+      fundraising: fundraisingPda,
+      donationService: statePda,
+      donaterTokenAccount: referrerTokenAccount.address,
+      fundraisingTokenAccount: fundraisingTokenAccount.address
+    }).signers([referrer]).rpc();
+
+
+    await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(donater.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
+
+    const initialDonaterBalance = await provider.connection.getBalance(donater.publicKey);
+
+    let [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+
+    const [donaterInfo, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("donater-info"), fundraisingId.toBuffer('le', 8), donater.publicKey.toBuffer()], program.programId);
+
+    const sumToDonate = new anchor.BN(1000);
+
+    const donaterTokenAccount = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      payer,
+      chrtMint,
+      referrer.publicKey
+    );
+
+    await program.methods.donate(sumToDonate, fundraisingId).accounts({
+      donater: donater.publicKey,
+      donaterInfo: donaterInfo,
+      donationService: donationAccount,
+      fundraising: fundraisingPda,
+      chrtMint: chrtMint,
+      referrerChrtAccount: referrerTokenAccount.address,
+      donaterChrtAccount: donaterTokenAccount.address
+    }).signers([donater]).rpc()
+
+    const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
+    
+    assert(fundraisingState.totalSum.eq(sumToDonate));
+
+  
+  });
+
 });
