@@ -192,12 +192,12 @@ describe("solana_donation", () => {
   });
 
   it("Test chrt donating to disable fee", async () => {
-    const fundraisingId = new BN(0);
+    const fundraisingId = new BN(1);
 
     const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), fundraisingId.toBuffer('le', 8)], program.programId);
     
     const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
-    const chrtToDonateAmount = new BN(1);
+    const chrtToDonateAmount = noFeeChrtThreshold.add(new BN(1));
 
     const fundraisingTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, fundraisingPda, true);
     const referrerTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, referrer.publicKey);
@@ -209,32 +209,8 @@ describe("solana_donation", () => {
       donaterTokenAccount: referrerTokenAccount.address,
       fundraisingTokenAccount: fundraisingTokenAccount.address
     }).signers([referrer]).rpc();
-  
-  });
-
-  it("Test chrt donating to cancel fundraising", async () => {
-    const fundraisingId = new BN(1);
-
-    const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), fundraisingId.toBuffer('le', 8)], program.programId);
-    
-    const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
-    const chrtToDonateAmount = noFeeChrtThreshold.add(new BN(1));
-
-    const fundraisingTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, fundraisingPda, true);
-    const referrerTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, referrer.publicKey);
-
-    await program.methods.donateChrt(chrtToDonateAmount, fundraisingId, false).accounts({
-      donater: referrer.publicKey,
-      fundraising: fundraisingPda,
-      donationService: statePda,
-      donaterTokenAccount: referrerTokenAccount.address,
-      fundraisingTokenAccount: fundraisingTokenAccount.address
-    }).signers([referrer]).rpc();
-
 
     await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(donater.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
-
-    const initialDonaterBalance = await provider.connection.getBalance(donater.publicKey);
 
     let [donationAccount, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
@@ -260,10 +236,27 @@ describe("solana_donation", () => {
     }).signers([donater]).rpc()
 
     const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
-    
-    assert(fundraisingState.totalSum.eq(sumToDonate));
-
-  
+    assert(fundraisingState.totalSum.eq(sumToDonate))
   });
 
+  it("Test chrt donating to cancel fundraising", async () => {
+    const fundraisingId = new BN(0);
+
+    const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), fundraisingId.toBuffer('le', 8)], program.programId);
+    
+    const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+    const chrtToDonateAmount = new BN(1);
+
+    const fundraisingTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, fundraisingPda, true);
+    const referrerTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, referrer.publicKey);
+
+    await program.methods.donateChrt(chrtToDonateAmount, fundraisingId, false).accounts({
+      donater: referrer.publicKey,
+      fundraising: fundraisingPda,
+      donationService: statePda,
+      donaterTokenAccount: referrerTokenAccount.address,
+      fundraisingTokenAccount: fundraisingTokenAccount.address
+    }).signers([referrer]).rpc();
+  
+  });
 });
