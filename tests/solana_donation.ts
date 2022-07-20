@@ -28,13 +28,13 @@ describe("solana_donation", () => {
   const ownerFeePercent = new BN(1);
   const rewardChrtAmount = new BN(1);
   const noFeeChrtThreshold = new BN(1);
-  const finishChrtThreshold = new BN(1);
+  const cancelChrtThreshold = new BN(1);
 
   it("Test initialization", async () => {
 
     const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
-    await program.methods.initialize(rewardPeriodSeconds, ownerFeePercent, rewardChrtAmount, noFeeChrtThreshold, finishChrtThreshold).accounts({
+    await program.methods.initialize(rewardPeriodSeconds, ownerFeePercent, rewardChrtAmount, noFeeChrtThreshold, cancelChrtThreshold).accounts({
       donationService: statePda,
       owner: owner.publicKey
     }).signers([]).rpc();
@@ -236,7 +236,11 @@ describe("solana_donation", () => {
     }).signers([donater]).rpc()
 
     const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
-    assert(fundraisingState.totalSum.eq(sumToDonate))
+    assert(fundraisingState.totalSum.eq(sumToDonate));
+
+    const donationState = await program.account.donationService.fetch(donationAccount);
+    assert(donationState.totalDroppedFee.eq(sumToDonate.mul(ownerFeePercent).div(new BN(100))));
+
   });
 
   it("Test chrt donating to cancel fundraising", async () => {

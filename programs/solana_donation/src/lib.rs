@@ -18,9 +18,12 @@ pub struct DonationService {
     pub owner: Pubkey,
     pub fundraisings_num: u64,
     pub total_fee: u64,
+    pub total_donations_sum: u64,
+    pub total_dropped_fee: u64,
+    pub total_canceled_funds: u64,
     pub owner_fee_percent: u64,
     pub no_fee_chrt_threshold: u64,
-    pub finish_chrt_threshold: u64,
+    pub cancel_chrt_threshold: u64,
     pub reward_period_seconds: u64,
     pub reward_chrt_amount: u64, 
     pub top_donaters: [Option<DonaterTopInfo>; 10],
@@ -28,7 +31,7 @@ pub struct DonationService {
 }
 
 impl DonationService {
-    pub const MAX_SIZE: usize = 32 + 8*7 + DonaterTopInfo::MAX_SIZE*10 + 1;
+    pub const MAX_SIZE: usize = 32 + 8*10 + DonaterTopInfo::MAX_SIZE*10 + 1;
 }
 
 #[account]
@@ -37,7 +40,7 @@ pub struct Fundraising {
     pub id: u64,
     pub total_sum: u64,
     pub total_no_fee_chrt_sum: u64,
-    pub total_finish_chrt_sum: u64,
+    pub total_cancel_chrt_sum: u64,
     pub is_finished: bool,
     pub top_donaters: [Option<DonaterTopInfo>; 3],
     pub bump: u8
@@ -139,6 +142,15 @@ pub struct WithdrawFee<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(fundraising_id: u64)]
+pub struct CancelFundraising<'info> {
+    #[account(seeds=[b"state"], bump)]
+    pub donation_service: Account<'info, DonationService>,
+    #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
+    pub fundraising: Account<'info, Fundraising>,
+    pub system_program: Program<'info, System>
+}
 
 #[error_code]
 pub enum DonationError {
@@ -160,13 +172,13 @@ pub mod solana_donation {
 
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>, reward_period_seconds: u64, owner_fee_percent: u64, reward_chrt_amount: u64, no_fee_chrt_threshold: u64, finish_chrt_threshold: u64) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, reward_period_seconds: u64, owner_fee_percent: u64, reward_chrt_amount: u64, no_fee_chrt_threshold: u64, cancel_chrt_threshold: u64) -> Result<()> {
         let donation_service_account = &mut ctx.accounts.donation_service;
         donation_service_account.reward_period_seconds = reward_period_seconds;
         donation_service_account.owner_fee_percent = owner_fee_percent;
         donation_service_account.reward_chrt_amount = reward_chrt_amount;
         donation_service_account.no_fee_chrt_threshold = no_fee_chrt_threshold;
-        donation_service_account.finish_chrt_threshold = finish_chrt_threshold;
+        donation_service_account.cancel_chrt_threshold = cancel_chrt_threshold;
 
         donation_service_account.owner = ctx.accounts.owner.key();
         donation_service_account.bump = *ctx.bumps.get("donation_service").unwrap();
@@ -199,7 +211,9 @@ pub mod solana_donation {
         let donater_info_account = &mut ctx.accounts.donater_info;
         let donater_chrt_account = &mut ctx.accounts.donater_chrt_account;
 
-        let fee: u64 = if fundraising_account.total_no_fee_chrt_sum < donation_account.no_fee_chrt_threshold {amount / 100 * donation_account.owner_fee_percent} else {0};
+        let is_fee_disabled = fundraising_account.total_no_fee_chrt_sum < donation_account.no_fee_chrt_threshold;
+        let potential_fee = amount / 100 * donation_account.owner_fee_percent;
+        let fee: u64 = if is_fee_disabled {potential_fee} else {0};
         let sum_to_donate = amount - fee;
 
         let donation_transfer_instruction = system_instruction::transfer(&donater_account.key(), &fundraising_account.key(), sum_to_donate);
@@ -218,9 +232,14 @@ pub mod solana_donation {
             ])?;    
         }
 
+        if is_fee_disabled {
+            donation_account.total_dropped_fee += potential_fee;
+        }
+
         fundraising_account.total_sum += sum_to_donate;
         donation_account.total_fee += fee;
         donater_info_account.total_sum += amount;
+        donation_account.total_donations_sum += amount;
         donater_info_account.chrt_wallet = donater_chrt_account.key();
 
         if donater_info_account.total_sum > fundraising_account.top_donaters[2].map_or(0, |x| x.total_sum){
@@ -280,7 +299,7 @@ pub mod solana_donation {
         if no_fee {
             fundraising_account.total_no_fee_chrt_sum += amount;
         } else {
-            fundraising_account.total_finish_chrt_sum += amount;
+            fundraising_account.total_cancel_chrt_sum += amount;
         }
         Ok(())
     }
@@ -301,6 +320,18 @@ pub mod solana_donation {
         Ok(())
     }
 
+    pub fn cancel_fundraising(ctx: Context<CancelFundraising>) -> Result<()> {
+        let donation_account = & ctx.accounts.donation_service;
+        let fundraising_account = &mut ctx.accounts.fundraising;
+
+        require!(!fundraising_account.is_finished, DonationError::FundraisingFinished);
+        
+        if fundraising_account.total_cancel_chrt_sum > donation_account.cancel_chrt_threshold {
+            fundraising_account.is_finished = true;
+        }
+
+        Ok(())
+    }
     pub fn wthdraw_fee(ctx: Context<WithdrawFee>) -> Result<()>{
 
         let donation_account = &mut ctx.accounts.donation_service;
