@@ -182,13 +182,13 @@ describe("solana_donation", () => {
   });
 
   it("Test top donation tracking", async () => {
-    await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(donater.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
-
     const fundraisingId = new BN(0);
-
+    const [donationPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
+    const donationService = await program.account.donationService.fetch(donationPda);
     const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), fundraisingId.toBuffer('le', 8)], program.programId);
     const fundraisingState = await program.account.fundraising.fetch(fundraisingPda);
     assert(fundraisingState.topDonaters[0].totalSum.eq(new BN(1000)));
+    assert(donationService.topDonaters[0].totalSum.eq(new BN(1000)));
   });
 
   it("Test chrt donating to disable fee", async () => {

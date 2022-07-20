@@ -17,6 +17,7 @@ impl DonaterTopInfo {
 pub struct DonationService {
     pub owner: Pubkey,
     pub fundraisings_num: u64,
+    pub vouchers_num: u64,
     pub total_fee: u64,
     pub total_donations_sum: u64,
     pub total_dropped_fee: u64,
@@ -59,6 +60,17 @@ pub struct DonaterInfo {
 
 impl DonaterInfo {
     pub const MAX_SIZE: usize = 8+32+1;
+}
+
+#[account]
+pub struct FundraisingVoucher {
+    pub id: u64,
+    pub amounts_to_redeem: Vec<u64>,
+    pub bump: u8,
+}
+
+impl FundraisingVoucher {
+    pub const MAX_SIZE: usize = 1+8;
 }
 
 #[derive(Accounts)]
@@ -145,10 +157,14 @@ pub struct WithdrawFee<'info> {
 #[derive(Accounts)]
 #[instruction(fundraising_id: u64)]
 pub struct CancelFundraising<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
     #[account(seeds=[b"state"], bump)]
     pub donation_service: Account<'info, DonationService>,
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
+    #[account(init, seeds=[b"voucher", donation_service.fundraisings_num.to_le_bytes().as_ref()], payer=user, space=8 + FundraisingVoucher::MAX_SIZE + 4 + (donation_service.fundraisings_num as usize) * 8, bump)]
+    pub fundraising_voucher: Account<'info, FundraisingVoucher>,
     pub system_program: Program<'info, System>
 }
 
@@ -195,6 +211,7 @@ pub mod solana_donation {
         fundraising_account.bump = *ctx.bumps.get("fundraising").unwrap();
         fundraising_account.id = new_fundraising_id;
         fundraising_account.owner = ctx.accounts.owner.key();
+        
         Ok(())
     }
 
@@ -255,6 +272,21 @@ pub mod solana_donation {
             fundraising_account.top_donaters[0] = top_donaters[0];
             fundraising_account.top_donaters[1] = top_donaters[1];
             fundraising_account.top_donaters[2] = top_donaters[2];
+        }
+
+        if donater_info_account.total_sum > donation_account.top_donaters[9].map_or(0, |x| x.total_sum){
+            let mut top_donaters = [
+                donation_account.top_donaters.to_vec(),
+                [Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, chrt_wallet: donater_info_account.chrt_wallet })].to_vec()
+            ].concat();
+            top_donaters.sort_by(|b, a|{
+                let a_sum = a.map_or(0, |x|x.total_sum);
+                let b_sum = b.map_or(0, |x|x.total_sum);
+                a_sum.cmp(&b_sum)
+            });
+            for i in 0..10 {
+                donation_account.top_donaters[i] = top_donaters[i];
+            }
         }
 
         let state_bump = donation_account.bump.to_le_bytes();
@@ -320,7 +352,7 @@ pub mod solana_donation {
         Ok(())
     }
 
-    pub fn cancel_fundraising(ctx: Context<CancelFundraising>) -> Result<()> {
+    pub fn cancel_fundraising(ctx: Context<CancelFundraising>, fundraising_id: u64, fundraisings_num: u64) -> Result<()> {
         let donation_account = & ctx.accounts.donation_service;
         let fundraising_account = &mut ctx.accounts.fundraising;
 
@@ -345,6 +377,5 @@ pub mod solana_donation {
         donation_account.total_fee = 0;
         Ok(())
     }
-
 }
 
