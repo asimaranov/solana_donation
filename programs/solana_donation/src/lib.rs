@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount, Mint};
 
 declare_id!("2qqDQ8RadpzattcT4mAcxuzrLjrvsmz3NXDqf72pmyYR");
+
+const ACTIVE_FUNDRAISINGS_LIMIT: usize = 100;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
 pub struct DonaterTopInfo {
@@ -11,6 +15,12 @@ pub struct DonaterTopInfo {
 
 impl DonaterTopInfo {
     pub const MAX_SIZE: usize = 8 + 32;
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+pub struct ActiveFundraisingBalance {
+    pub id: u64,
+    pub balance: u64
 }
 
 #[account]
@@ -28,11 +38,12 @@ pub struct DonationService {
     pub reward_period_seconds: u64,
     pub reward_chrt_amount: u64, 
     pub top_donaters: [Option<DonaterTopInfo>; 10],
+    pub active_fundraising_balances: Vec<ActiveFundraisingBalance>,
     pub bump: u8
 }
 
 impl DonationService {
-    pub const MAX_SIZE: usize = 32 + 8*10 + DonaterTopInfo::MAX_SIZE*10 + 1;
+    pub const MAX_SIZE: usize = 32 + 8*10 + DonaterTopInfo::MAX_SIZE*10 + (4 + 16 * ACTIVE_FUNDRAISINGS_LIMIT) + 1;
 }
 
 #[account]
@@ -60,17 +71,6 @@ pub struct DonaterInfo {
 
 impl DonaterInfo {
     pub const MAX_SIZE: usize = 8+32+1;
-}
-
-#[account]
-pub struct FundraisingVoucher {
-    pub id: u64,
-    pub amounts_to_redeem: Vec<u64>,
-    pub bump: u8,
-}
-
-impl FundraisingVoucher {
-    pub const MAX_SIZE: usize = 1+8;
 }
 
 #[derive(Accounts)]
@@ -159,12 +159,10 @@ pub struct WithdrawFee<'info> {
 pub struct CancelFundraising<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
-    #[account(seeds=[b"state"], bump)]
+    #[account(mut, seeds=[b"state"], bump)]
     pub donation_service: Account<'info, DonationService>,
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
-    #[account(init, seeds=[b"voucher", donation_service.fundraisings_num.to_le_bytes().as_ref()], payer=user, space=8 + FundraisingVoucher::MAX_SIZE + 4 + (donation_service.fundraisings_num as usize) * 8, bump)]
-    pub fundraising_voucher: Account<'info, FundraisingVoucher>,
     pub system_program: Program<'info, System>
 }
 
@@ -178,6 +176,11 @@ pub enum DonationError {
     NotOwner,
     #[msg("Unable to donate 0 lamports")]
     ZeroDonation,
+    #[msg("Active fundrisings limit exceeded. Please consider to cancel some")]
+    ActiveFundraisingsLimitExceeded,
+    #[msg("Insufficient chrt token amount to perform the action")]
+    InsufficientChrtAmount,
+
 }
 
 #[program]
@@ -204,8 +207,13 @@ pub mod solana_donation {
 
     pub fn create_fundraising(ctx: Context<CreateFundraising>) -> Result<()> {
         let donation_service_account = &mut ctx.accounts.donation_service;
+
+        require!(donation_service_account.active_fundraising_balances.len() < ACTIVE_FUNDRAISINGS_LIMIT, DonationError::ActiveFundraisingsLimitExceeded);
+
         let new_fundraising_id = donation_service_account.fundraisings_num;
         donation_service_account.fundraisings_num += 1;
+
+        donation_service_account.active_fundraising_balances.push(ActiveFundraisingBalance { id: new_fundraising_id, balance: 0 });
 
         let fundraising_account = &mut ctx.accounts.fundraising;
         fundraising_account.bump = *ctx.bumps.get("fundraising").unwrap();
@@ -258,6 +266,9 @@ pub mod solana_donation {
         donation_account.total_donations_sum += amount;
         donater_info_account.chrt_wallet = donater_chrt_account.key();
 
+        let active_donation_balance_id = donation_account.active_fundraising_balances.binary_search_by(|x|x.id.cmp(&fundraising_id)).unwrap();
+        donation_account.active_fundraising_balances[active_donation_balance_id].balance += amount;
+        
         if donater_info_account.total_sum > fundraising_account.top_donaters[2].map_or(0, |x| x.total_sum){
             let mut top_donaters = [fundraising_account.top_donaters[0], 
             fundraising_account.top_donaters[1], 
@@ -337,10 +348,13 @@ pub mod solana_donation {
 
     pub fn withdraw(ctx: Context<Withdraw>, fundraising_id: u64) -> Result<()> {
         let fundraising_account = &mut ctx.accounts.fundraising;
-
         let fundraising_owner_account = &mut ctx.accounts.fundraising_owner;
+        let donation_account = &mut ctx.accounts.donation_service;
 
         fundraising_account.is_finished = true;
+
+        let active_donation_balance_id = donation_account.active_fundraising_balances.binary_search_by(|x|x.id.cmp(&fundraising_id)).unwrap();
+        donation_account.active_fundraising_balances.remove(active_donation_balance_id);
 
         require!(fundraising_account.owner == fundraising_owner_account.key(), DonationError::NotFundingOwner);
                 
@@ -351,15 +365,17 @@ pub mod solana_donation {
         Ok(())
     }
 
-    pub fn cancel_fundraising(ctx: Context<CancelFundraising>, fundraising_id: u64, fundraisings_num: u64) -> Result<()> {
-        let donation_account = &ctx.accounts.donation_service;
+    pub fn cancel_fundraising(ctx: Context<CancelFundraising>, fundraising_id: u64) -> Result<()> {
+        let donation_account = &mut ctx.accounts.donation_service;
         let fundraising_account = &mut ctx.accounts.fundraising;
 
         require!(!fundraising_account.is_finished, DonationError::FundraisingFinished);
+        require!(fundraising_account.total_cancel_chrt_sum > donation_account.cancel_chrt_threshold, DonationError::InsufficientChrtAmount);
         
-        if fundraising_account.total_cancel_chrt_sum > donation_account.cancel_chrt_threshold {
-            fundraising_account.is_finished = true;
-        }
+        fundraising_account.is_finished = true;
+        let active_donation_balance_id = donation_account.active_fundraising_balances.binary_search_by(|x|x.id.cmp(&fundraising_id)).unwrap();
+        donation_account.active_fundraising_balances.remove(active_donation_balance_id);
+        
 
         Ok(())
     }
