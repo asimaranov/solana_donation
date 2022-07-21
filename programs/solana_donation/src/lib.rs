@@ -375,8 +375,6 @@ pub mod solana_donation {
         fundraising_account.is_finished = true;
         let active_donation_balance_id = donation_account.active_fundraising_balances.binary_search_by(|x|x.id.cmp(&fundraising_id)).unwrap();
         donation_account.active_fundraising_balances.remove(active_donation_balance_id);
-        
-
         Ok(())
     }
     pub fn wthdraw_fee(ctx: Context<WithdrawFee>) -> Result<()>{
