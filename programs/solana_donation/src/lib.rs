@@ -406,7 +406,7 @@ pub mod solana_donation {
         }
         Ok(())
     }
-    pub fn wthdraw_fee(ctx: Context<WithdrawFee>) -> Result<()> {
+    pub fn withdraw_fee(ctx: Context<WithdrawFee>) -> Result<()> {
         let donation_account = &mut ctx.accounts.donation_service;
         let service_owner_account = &mut ctx.accounts.donation_service_owner;
 

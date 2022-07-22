@@ -175,7 +175,7 @@ describe("solana_donation", () => {
     const donationService = await program.account.donationService.fetch(donationAccount);
     assert(donationService.totalFee.gtn(0));
 
-    await program.methods.wthdrawFee().accounts({
+    await program.methods.withdrawFee().accounts({
       donationService: donationAccount,
       donationServiceOwner: owner.publicKey,
     }).rpc()
