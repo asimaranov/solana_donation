@@ -35,6 +35,7 @@ pub struct DonationService {
     pub cancel_chrt_threshold: u64,
     pub reward_period_seconds: u64,
     pub reward_chrt_amount: u64, 
+    pub reward_cooldown: u64,
     pub top_donaters: [Option<DonaterTopInfo>; 10],
     pub active_fundraising_balances: Vec<ActiveFundraisingBalance>,
     pub bump: u8
@@ -166,7 +167,7 @@ pub struct CancelFundraising<'info> {
 
 #[derive(Accounts)]
 pub struct RewardTopDonaters <'info> {
-    #[account(seeds=[b"state"], bump)]
+    #[account(mut, seeds=[b"state"], bump)]
     pub donation_service: Account<'info, DonationService>,
     #[account(mut)]
     pub chrt_mint: Account<'info, Mint>,
@@ -197,7 +198,10 @@ pub enum DonationError {
     #[msg("Insufficient chrt token amount to perform the action")]
     InsufficientChrtAmount,
     #[msg("Provided invalid top user account")]
-    InvalidWalletAccount
+    InvalidWalletAccount,
+    #[msg("It's too early")]
+    TooEarly
+
 
 }
 
@@ -416,13 +420,18 @@ pub mod solana_donation {
     }
 
     pub fn reward_top_donaters(ctx: Context<RewardTopDonaters>) -> Result<()> {
-        require!(ctx.accounts.owner.key() == ctx.accounts.donation_service.owner, DonationError::NotOwner);
+        let donation_account = &mut ctx.accounts.donation_service;
+        require!(ctx.accounts.owner.key() == donation_account.owner, DonationError::NotOwner);
+
+        let current_time = Clock::get().unwrap().unix_timestamp as u64;
+
+        require!(donation_account.reward_cooldown <= current_time, DonationError::TooEarly);
 
         let wallets = [&ctx.accounts.top_1_wallet, &ctx.accounts.top_2_wallet, &ctx.accounts.top_3_wallet];
-        for (i, top_donater) in ctx.accounts.donation_service.top_donaters[0..3].iter().enumerate() {
+        for (i, top_donater) in donation_account.top_donaters[0..3].iter().enumerate() {
             if let Some(top_donater) = top_donater {
             
-                let state_bump = ctx.accounts.donation_service.bump.to_le_bytes();
+                let state_bump = donation_account.bump.to_le_bytes();
 
                 let inner = vec![
                     b"state".as_ref(),
@@ -436,12 +445,13 @@ pub mod solana_donation {
                 MintTo { 
                     mint: ctx.accounts.chrt_mint.to_account_info(), 
                     to: wallets[i].to_account_info(), 
-                    authority: ctx.accounts.donation_service.to_account_info() 
+                    authority: donation_account.to_account_info() 
                 }, &outer);
 
-                token::mint_to(cpi_ctx, ctx.accounts.donation_service.reward_chrt_amount)?;
+                token::mint_to(cpi_ctx, donation_account.reward_chrt_amount)?;
             }
         }
+        donation_account.reward_cooldown = current_time;
         Ok(())
     }
 }
