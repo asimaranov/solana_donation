@@ -249,7 +249,7 @@ describe("solana_donation", () => {
     const [fundraisingPda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("fundraising"), fundraisingId.toBuffer('le', 8)], program.programId);
     
     const [statePda, ] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
-    const chrtToDonateAmount = new BN(1);
+    const chrtToDonateAmount = new BN(1_000);
 
     const fundraisingTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, fundraisingPda, true);
     const referrerTokenAccount = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, referrer.publicKey);

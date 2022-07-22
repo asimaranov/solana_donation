@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Token, TokenAccount, Mint};
 
@@ -166,6 +164,24 @@ pub struct CancelFundraising<'info> {
     pub system_program: Program<'info, System>
 }
 
+#[derive(Accounts)]
+pub struct RewardTopDonaters <'info> {
+    #[account(seeds=[b"state"], bump)]
+    pub donation_service: Account<'info, DonationService>,
+    #[account(mut)]
+    pub chrt_mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub top_1_wallet: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub top_2_wallet: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub top_3_wallet: Account<'info, TokenAccount>,
+    #[account()]
+    pub owner: Signer<'info>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>
+}
+
 #[error_code]
 pub enum DonationError {
     #[msg("Only funding owner can call this")]
@@ -180,6 +196,8 @@ pub enum DonationError {
     ActiveFundraisingsLimitExceeded,
     #[msg("Insufficient chrt token amount to perform the action")]
     InsufficientChrtAmount,
+    #[msg("Provided invalid top user account")]
+    InvalidWalletAccount
 
 }
 
@@ -374,10 +392,17 @@ pub mod solana_donation {
         
         fundraising_account.is_finished = true;
         let active_donation_balance_id = donation_account.active_fundraising_balances.binary_search_by(|x|x.id.cmp(&fundraising_id)).unwrap();
+        let balance_to_redistribute = donation_account.active_fundraising_balances[active_donation_balance_id].balance;
         donation_account.active_fundraising_balances.remove(active_donation_balance_id);
+
+        let total_sum: u128 = donation_account.active_fundraising_balances.iter().map(|x| x.balance as u128).sum();
+
+        for active_balance in &mut donation_account.active_fundraising_balances {
+            active_balance.balance += (balance_to_redistribute as u128 * active_balance.balance as u128 / total_sum) as u64;
+        }
         Ok(())
     }
-    pub fn wthdraw_fee(ctx: Context<WithdrawFee>) -> Result<()>{
+    pub fn wthdraw_fee(ctx: Context<WithdrawFee>) -> Result<()> {
         let donation_account = &mut ctx.accounts.donation_service;
         let service_owner_account = &mut ctx.accounts.donation_service_owner;
 
@@ -387,6 +412,36 @@ pub mod solana_donation {
         **service_owner_account.to_account_info().try_borrow_mut_lamports()? += donation_account.total_fee;
 
         donation_account.total_fee = 0;
+        Ok(())
+    }
+
+    pub fn reward_top_donaters(ctx: Context<RewardTopDonaters>) -> Result<()> {
+        require!(ctx.accounts.owner.key() == ctx.accounts.donation_service.owner, DonationError::NotOwner);
+
+        let wallets = [&ctx.accounts.top_1_wallet, &ctx.accounts.top_2_wallet, &ctx.accounts.top_3_wallet];
+        for (i, top_donater) in ctx.accounts.donation_service.top_donaters[0..3].iter().enumerate() {
+            if let Some(top_donater) = top_donater {
+            
+                let state_bump = ctx.accounts.donation_service.bump.to_le_bytes();
+
+                let inner = vec![
+                    b"state".as_ref(),
+                    state_bump.as_ref()
+                ];
+                let outer = vec![inner.as_slice()];
+                
+                require!(top_donater.chrt_wallet == wallets[i].key(), DonationError::InvalidWalletAccount);
+
+                let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), 
+                MintTo { 
+                    mint: ctx.accounts.chrt_mint.to_account_info(), 
+                    to: wallets[i].to_account_info(), 
+                    authority: ctx.accounts.donation_service.to_account_info() 
+                }, &outer);
+
+                token::mint_to(cpi_ctx, ctx.accounts.donation_service.reward_chrt_amount)?;
+            }
+        }
         Ok(())
     }
 }
