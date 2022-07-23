@@ -8,7 +8,7 @@ const ACTIVE_FUNDRAISINGS_LIMIT: usize = 100;
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
 pub struct DonaterTopInfo {
     pub total_sum: u64,
-    pub chrt_wallet: Pubkey,
+    pub donater: Pubkey,
 }
 
 impl DonaterTopInfo {
@@ -58,13 +58,13 @@ pub struct Fundraising {
 }
 
 impl Fundraising {
-    pub const MAX_SIZE: usize = 32 + 8*4 + 1*3 + DonaterTopInfo::MAX_SIZE * 3;
+    pub const MAX_SIZE: usize = 32 + 8*4 + 1 + (1 + DonaterTopInfo::MAX_SIZE) * 3 + 1;
 }
 
 #[account]
 pub struct DonaterInfo {
     pub total_sum: u64,
-    pub chrt_wallet: Pubkey,
+    pub donater: Pubkey,
     pub bump: u8,
 }
 
@@ -105,8 +105,6 @@ pub struct Donate<'info> {
     pub fundraising: Account<'info, Fundraising>,
     #[account(mut)]
     pub chrt_mint: Account<'info, Mint>,
-    #[account(mut, token::mint=chrt_mint)]
-    pub donater_chrt_account: Account<'info, TokenAccount>,
     #[account(mut, token::mint=chrt_mint)]
     pub referrer_chrt_account: Account<'info, TokenAccount>,
 
@@ -255,7 +253,6 @@ pub mod solana_donation {
         let donation_account = &mut ctx.accounts.donation_service;
         let donater_account = &mut ctx.accounts.donater;
         let donater_info_account = &mut ctx.accounts.donater_info;
-        let donater_chrt_account = &mut ctx.accounts.donater_chrt_account;
 
         let is_fee_disabled = fundraising_account.total_no_fee_chrt_sum < donation_account.no_fee_chrt_threshold;
         let potential_fee = amount / 100 * donation_account.owner_fee_percent;
@@ -286,7 +283,6 @@ pub mod solana_donation {
         donation_account.total_fee += fee;
         donater_info_account.total_sum += amount;
         donation_account.total_donations_sum += amount;
-        donater_info_account.chrt_wallet = donater_chrt_account.key();
 
         let active_donation_balance_id = donation_account.active_fundraising_balances.binary_search_by(|x|x.id.cmp(&fundraising_id)).unwrap();
         donation_account.active_fundraising_balances[active_donation_balance_id].balance += amount;
@@ -294,7 +290,7 @@ pub mod solana_donation {
         if donater_info_account.total_sum > fundraising_account.top_donaters[2].map_or(0, |x| x.total_sum){
             let mut top_donaters = [fundraising_account.top_donaters[0], 
             fundraising_account.top_donaters[1], 
-            Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, chrt_wallet: donater_info_account.chrt_wallet }), 
+            Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, donater: ctx.accounts.donater.key() }), 
             fundraising_account.top_donaters[2], ];
             top_donaters.sort_by(|b, a|{
                 let a_sum = a.map_or(0, |x|x.total_sum);
@@ -309,7 +305,7 @@ pub mod solana_donation {
         if donater_info_account.total_sum > donation_account.top_donaters[9].map_or(0, |x| x.total_sum){
             let mut top_donaters = [
                 donation_account.top_donaters.to_vec(),
-                [Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, chrt_wallet: donater_info_account.chrt_wallet })].to_vec()
+                [Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, donater: donater_info_account.donater })].to_vec()
             ].concat();
             top_donaters.sort_by(|b, a|{
                 let a_sum = a.map_or(0, |x|x.total_sum);
@@ -439,7 +435,7 @@ pub mod solana_donation {
                 ];
                 let outer = vec![inner.as_slice()];
                 
-                require!(top_donater.chrt_wallet == wallets[i].key(), DonationError::InvalidWalletAccount);
+                require!(wallets[i].owner == top_donater.donater, DonationError::InvalidWalletAccount);
 
                 let cpi_ctx = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), 
                 MintTo { 
@@ -455,4 +451,3 @@ pub mod solana_donation {
         Ok(())
     }
 }
-
