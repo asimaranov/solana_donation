@@ -166,7 +166,7 @@ pub struct CancelFundraising<'info> {
 #[derive(Accounts)]
 pub struct RewardTopDonaters <'info> {
     #[account(mut, seeds=[b"state"], bump)]
-    pub donation_service: Account<'info, DonationService>,
+    pub donation_service: Box<Account<'info, DonationService>>,
     #[account(mut)]
     pub chrt_mint: Account<'info, Mint>,
     #[account(mut)]
@@ -282,6 +282,7 @@ pub mod solana_donation {
         fundraising_account.total_sum += sum_to_donate;
         donation_account.total_fee += fee;
         donater_info_account.total_sum += amount;
+        donater_info_account.donater = donater_account.key();
         donation_account.total_donations_sum += amount;
 
         let active_donation_balance_id = donation_account.active_fundraising_balances.binary_search_by(|x|x.id.cmp(&fundraising_id)).unwrap();

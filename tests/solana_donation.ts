@@ -26,7 +26,7 @@ describe("solana_donation", () => {
   const rewardPeriodSeconds = new BN(1);
 
   const ownerFeePercent = new BN(1);
-  const rewardChrtAmount = new BN(1);
+  const rewardChrtAmount = new BN(2);
   const noFeeChrtThreshold = new BN(1);
   const cancelChrtThreshold = new BN(1);
 
@@ -369,17 +369,25 @@ describe("solana_donation", () => {
     const top2Wallet = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, donationServiceState.topDonaters[1].donater);
     const top3Wallet = await getOrCreateAssociatedTokenAccount(provider.connection, payer, chrtMint, donationServiceState.topDonaters[2].donater);
 
-    try {
-      await program.methods.rewardTopDonaters().accounts({
-        donationService: donationServicePda,
-        chrtMint: chrtMint,
-        top1Wallet: top1Wallet.address,
-        top2Wallet: top2Wallet.address,
-        top3Wallet: top3Wallet.address,
-      }).rpc();
-    } catch (e) {
-      console.log(e)
-    }
+    const initialTop1ChrtAmount = top1Wallet.amount;
+    const initialTop2ChrtAmount = top2Wallet.amount;
+    const initialTop3ChrtAmount = top3Wallet.amount;
+    
+    await program.methods.rewardTopDonaters().accounts({
+      donationService: donationServicePda,
+      chrtMint: chrtMint,
+      top1Wallet: top1Wallet.address,
+      top2Wallet: top2Wallet.address,
+      top3Wallet: top3Wallet.address,
+    }).rpc();
+
+    const updatedTop1Wallet = await getAccount(provider.connection, top1Wallet.address);
+    const updatedTop2Wallet = await getAccount(provider.connection, top2Wallet.address);
+    const updatedTop3Wallet = await getAccount(provider.connection, top3Wallet.address);
+
+    assert(updatedTop1Wallet.amount == initialTop1ChrtAmount + BigInt(rewardChrtAmount.toString("hex")));
+    assert(updatedTop2Wallet.amount == initialTop2ChrtAmount + BigInt(rewardChrtAmount.toString("hex")));
+    assert(updatedTop3Wallet.amount == initialTop3ChrtAmount + BigInt(rewardChrtAmount.toString("hex")));
 
   });
 });
