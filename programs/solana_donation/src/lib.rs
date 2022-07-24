@@ -289,32 +289,49 @@ pub mod solana_donation {
         donation_account.active_fundraising_balances[active_donation_balance_id].balance += amount;
         
         if donater_info_account.total_sum > fundraising_account.top_donaters[2].map_or(0, |x| x.total_sum){
-            let mut top_donaters = [fundraising_account.top_donaters[0], 
-            fundraising_account.top_donaters[1], 
-            Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, donater: ctx.accounts.donater.key() }), 
-            fundraising_account.top_donaters[2], ];
-            top_donaters.sort_by(|b, a|{
-                let a_sum = a.map_or(0, |x|x.total_sum);
-                let b_sum = b.map_or(0, |x|x.total_sum);
-                a_sum.cmp(&b_sum)
-            });
-            fundraising_account.top_donaters[0] = top_donaters[0];
-            fundraising_account.top_donaters[1] = top_donaters[1];
-            fundraising_account.top_donaters[2] = top_donaters[2];
+            let top_donater_position = donation_account.top_donaters.iter()
+            .position(|x|x.map_or(false, |v| v.donater == donater_info_account.donater));
+
+            if let Some(top_donater_position) = top_donater_position {
+                donation_account.top_donaters[top_donater_position].unwrap().total_sum += amount;
+            } else {
+                let mut top_donaters = [
+                    fundraising_account.top_donaters[0], 
+                    fundraising_account.top_donaters[1], 
+                    Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, donater: ctx.accounts.donater.key() }), 
+                    fundraising_account.top_donaters[2]
+                ];
+                top_donaters.sort_by(|b, a|{
+                    let a_sum = a.map_or(0, |x|x.total_sum);
+                    let b_sum = b.map_or(0, |x|x.total_sum);
+                    a_sum.cmp(&b_sum)
+                });
+                fundraising_account.top_donaters[0] = top_donaters[0];
+                fundraising_account.top_donaters[1] = top_donaters[1];
+                fundraising_account.top_donaters[2] = top_donaters[2];
+            }
         }
 
-        if donater_info_account.total_sum > donation_account.top_donaters[9].map_or(0, |x| x.total_sum){
-            let mut top_donaters = [
-                donation_account.top_donaters.to_vec(),
-                [Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, donater: donater_info_account.donater })].to_vec()
-            ].concat();
-            top_donaters.sort_by(|b, a|{
-                let a_sum = a.map_or(0, |x|x.total_sum);
-                let b_sum = b.map_or(0, |x|x.total_sum);
-                a_sum.cmp(&b_sum)
-            });
-            for i in 0..10 {
-                donation_account.top_donaters[i] = top_donaters[i];
+        if donater_info_account.total_sum > donation_account.top_donaters[9].map_or(0, |x| x.total_sum) {
+            let top_donater_position = donation_account.top_donaters.iter()
+                .position(|x|x.map_or(false, |v| v.donater == donater_info_account.donater));
+            
+            if let Some(top_donater_position) = top_donater_position {
+                donation_account.top_donaters[top_donater_position].unwrap().total_sum += amount;
+            } else {
+                let mut top_donaters = [
+                    donation_account.top_donaters.to_vec(),
+                    [Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, donater: donater_info_account.donater })].to_vec()
+                ].concat();
+
+                top_donaters.sort_by(|b, a|{
+                    let a_sum = a.map_or(0, |x|x.total_sum);
+                    let b_sum = b.map_or(0, |x|x.total_sum);
+                    a_sum.cmp(&b_sum)
+                });
+                for i in 0..10 {
+                    donation_account.top_donaters[i] = top_donaters[i];
+                }
             }
         }
 
