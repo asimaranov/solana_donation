@@ -37,12 +37,13 @@ pub struct DonationService {
     pub reward_chrt_amount: u64, 
     pub reward_cooldown: u64,
     pub top_donaters: [Option<DonaterTopInfo>; 10],
+    pub nominated_donaters: Box<[Option<DonaterTopInfo>; 10]>,
     pub active_fundraising_balances: Vec<ActiveFundraisingBalance>,
     pub bump: u8
 }
 
 impl DonationService {
-    pub const MAX_SIZE: usize = 32 + 8*10 + DonaterTopInfo::MAX_SIZE*10 + (4 + 16 * ACTIVE_FUNDRAISINGS_LIMIT) + 1;
+    pub const MAX_SIZE: usize = 32 + 8*10 +  DonaterTopInfo::MAX_SIZE*10 * 2 + (4 + 16 * ACTIVE_FUNDRAISINGS_LIMIT) + 1;
 }
 
 #[account]
@@ -335,6 +336,29 @@ pub mod solana_donation {
             }
         }
 
+        if donater_info_account.total_sum > donation_account.nominated_donaters[9].map_or(0, |x| x.total_sum) {
+            let top_donater_position = donation_account.nominated_donaters.iter()
+                .position(|x|x.map_or(false, |v| v.donater == donater_info_account.donater));
+            
+            if let Some(top_donater_position) = top_donater_position {
+                donation_account.nominated_donaters[top_donater_position].unwrap().total_sum += amount;
+            } else {
+                let mut nominated_donaters = [
+                    donation_account.nominated_donaters.to_vec(),
+                    [Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, donater: donater_info_account.donater })].to_vec()
+                ].concat();
+
+                nominated_donaters.sort_by(|b, a|{
+                    let a_sum = a.map_or(0, |x|x.total_sum);
+                    let b_sum = b.map_or(0, |x|x.total_sum);
+                    a_sum.cmp(&b_sum)
+                });
+                for i in 0..10 {
+                    donation_account.nominated_donaters[i] = nominated_donaters[i];
+                }
+            }
+        }
+
         let state_bump = donation_account.bump.to_le_bytes();
 
         let inner = vec![
@@ -442,7 +466,7 @@ pub mod solana_donation {
         require!(donation_account.reward_cooldown <= current_time, DonationError::TooEarly);
 
         let wallets = [&ctx.accounts.top_1_wallet, &ctx.accounts.top_2_wallet, &ctx.accounts.top_3_wallet];
-        for (i, top_donater) in donation_account.top_donaters[0..3].iter().enumerate() {
+        for (i, top_donater) in donation_account.nominated_donaters[0..3].iter().enumerate() {
             if let Some(top_donater) = top_donater {
             
                 let state_bump = donation_account.bump.to_le_bytes();
@@ -463,6 +487,7 @@ pub mod solana_donation {
                 }, &outer);
 
                 token::mint_to(cpi_ctx, donation_account.reward_chrt_amount)?;
+                donation_account.nominated_donaters[i].unwrap().total_sum = 0;
             }
         }
         donation_account.reward_cooldown = current_time;
