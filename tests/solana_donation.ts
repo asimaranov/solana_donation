@@ -267,19 +267,17 @@ describe("solana_donation", () => {
       donationService: donationPda,
       fundraising: fundraisingPda
     }).rpc();
+    console.log(1);
 
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(user1.publicKey, user1Donation * anchor.web3.LAMPORTS_PER_SOL)
     );
-
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(user2.publicKey, user2Donation * anchor.web3.LAMPORTS_PER_SOL)
     );
-
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(user3.publicKey, user3Donation * anchor.web3.LAMPORTS_PER_SOL)
     );
-
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(user4.publicKey, user4Donation * anchor.web3.LAMPORTS_PER_SOL)
     );
@@ -289,10 +287,13 @@ describe("solana_donation", () => {
     for (let [user, userDonation] of new Map<web3.Keypair, number>([
       [user1, user1Donation], [user2, user2Donation], [user3, user3Donation], [user4, user4Donation]
     ])) {
+      console.log(4);
+
       const [userDonaterInfoPda,] = await web3.PublicKey.findProgramAddress(
         [anchor.utils.bytes.utf8.encode("donater-info"),
         fundraisingId.toBuffer('le', 8),
         user.publicKey.toBuffer()], program.programId);
+        console.log(5);
 
       await program.methods.donate(new BN(userDonation), fundraisingId).accounts({
         donater: user.publicKey,
