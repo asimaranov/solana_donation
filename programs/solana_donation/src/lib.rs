@@ -200,8 +200,6 @@ pub enum DonationError {
     InvalidWalletAccount,
     #[msg("It's too early")]
     TooEarly
-
-
 }
 
 #[program]
