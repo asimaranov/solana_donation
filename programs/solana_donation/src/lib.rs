@@ -70,7 +70,18 @@ pub struct DonaterInfo {
 }
 
 impl DonaterInfo {
-    pub const MAX_SIZE: usize = 8+32+1;
+    pub const MAX_SIZE: usize = 8 + 32 + 1;
+}
+
+#[account]
+pub struct GlobalTopInfo {
+    pub nominated_sum: u64,
+    pub donater: Pubkey,
+    pub bump: u8,
+}
+
+impl GlobalTopInfo {
+    pub const MAX_SIZE: usize = 8 + 32 + 1;
 }
 
 #[derive(Accounts)]
@@ -100,6 +111,8 @@ pub struct Donate<'info> {
     pub donater: Signer<'info>,
     #[account(init_if_needed, payer=donater, space = 8 + DonaterInfo::MAX_SIZE, seeds = [b"donater-info", fundraising_id.to_le_bytes().as_ref(), donater.key().as_ref()], bump)]
     pub donater_info: Account<'info, DonaterInfo>,
+    #[account(init_if_needed, seeds=[b"global-top-info", donater.key().as_ref()], payer=donater, space=8+GlobalTopInfo::MAX_SIZE, bump)]
+    pub donater_top_info: Account<'info, GlobalTopInfo>,
     #[account(mut, seeds=[b"state"], bump)]
     pub donation_service: Box<Account<'info, DonationService>>,
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
@@ -112,7 +125,6 @@ pub struct Donate<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
 }
-
 
 #[derive(Accounts)]
 #[instruction(amount: u64, fundraising_id: u64)]
@@ -176,7 +188,15 @@ pub struct RewardTopDonaters <'info> {
     pub top_2_wallet: Account<'info, TokenAccount>,
     #[account(mut)]
     pub top_3_wallet: Account<'info, TokenAccount>,
-    #[account()]
+
+    #[account(mut, seeds=[b"global-top-info", top_1_wallet.owner.key().as_ref()], bump)]
+    pub top_1_info: Account<'info, GlobalTopInfo>,
+    #[account(mut, seeds=[b"global-top-info", top_2_wallet.owner.key().as_ref()], bump)]
+    pub top_2_info: Account<'info, GlobalTopInfo>,
+    #[account(mut, seeds=[b"global-top-info", top_3_wallet.owner.key().as_ref()], bump)]
+    pub top_3_info: Account<'info, GlobalTopInfo>,
+
+    #[account(mut)]
     pub owner: Signer<'info>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>
@@ -205,7 +225,7 @@ pub enum DonationError {
 #[program]
 pub mod solana_donation {
 
-    use anchor_lang::{solana_program::{system_instruction, program::{invoke, invoke_signed}}, system_program};
+    use anchor_lang::{solana_program::{system_instruction, program::{invoke}}, system_program};
     use anchor_spl::token::{MintTo, self, Transfer};
 
     use super::*;
@@ -217,7 +237,6 @@ pub mod solana_donation {
         donation_service_account.reward_chrt_amount = reward_chrt_amount;
         donation_service_account.no_fee_chrt_threshold = no_fee_chrt_threshold;
         donation_service_account.cancel_chrt_threshold = cancel_chrt_threshold;
-
         donation_service_account.owner = ctx.accounts.owner.key();
         donation_service_account.bump = *ctx.bumps.get("donation_service").unwrap();
 
@@ -231,7 +250,6 @@ pub mod solana_donation {
 
         let new_fundraising_id = donation_service_account.fundraisings_num;
         donation_service_account.fundraisings_num += 1;
-
         donation_service_account.active_fundraising_balances.push(ActiveFundraisingBalance { id: new_fundraising_id, balance: 0 });
 
         let fundraising_account = &mut ctx.accounts.fundraising;
@@ -252,6 +270,7 @@ pub mod solana_donation {
         let donation_account = &mut ctx.accounts.donation_service;
         let donater_account = &mut ctx.accounts.donater;
         let donater_info_account = &mut ctx.accounts.donater_info;
+        let donater_top_info_account = &mut ctx.accounts.donater_top_info;
 
         let is_fee_disabled = fundraising_account.total_no_fee_chrt_sum < donation_account.no_fee_chrt_threshold;
         let potential_fee = amount / 100 * donation_account.owner_fee_percent;
@@ -281,6 +300,7 @@ pub mod solana_donation {
         fundraising_account.total_sum += sum_to_donate;
         donation_account.total_fee += fee;
         donater_info_account.total_sum += amount;
+        donater_top_info_account.nominated_sum += amount;
         donater_info_account.donater = donater_account.key();
         donation_account.total_donations_sum += amount;
 
@@ -334,7 +354,7 @@ pub mod solana_donation {
             }
         }
 
-        if donater_info_account.total_sum > donation_account.nominated_donaters[9].map_or(0, |x| x.total_sum) {
+        if donater_top_info_account.nominated_sum > donation_account.nominated_donaters[9].map_or(0, |x| x.total_sum) {
             let top_donater_position = donation_account.nominated_donaters.iter()
                 .position(|x|x.map_or(false, |v| v.donater == donater_info_account.donater));
             
@@ -343,7 +363,7 @@ pub mod solana_donation {
             } else {
                 let mut nominated_donaters = [
                     donation_account.nominated_donaters.to_vec(),
-                    [Some(DonaterTopInfo{ total_sum: donater_info_account.total_sum, donater: donater_info_account.donater })].to_vec()
+                    [Some(DonaterTopInfo{ total_sum: donater_top_info_account.nominated_sum, donater: donater_info_account.donater })].to_vec()
                 ].concat();
 
                 nominated_donaters.sort_by(|b, a|{
@@ -464,6 +484,8 @@ pub mod solana_donation {
         require!(donation_account.reward_cooldown <= current_time, DonationError::TooEarly);
 
         let wallets = [&ctx.accounts.top_1_wallet, &ctx.accounts.top_2_wallet, &ctx.accounts.top_3_wallet];
+        let top_infos = [&mut ctx.accounts.top_1_info, &mut ctx.accounts.top_2_info, &mut ctx.accounts.top_3_info];
+
         for (i, top_donater) in donation_account.nominated_donaters[0..3].iter().enumerate() {
             if let Some(top_donater) = top_donater {
             
@@ -486,6 +508,7 @@ pub mod solana_donation {
 
                 token::mint_to(cpi_ctx, donation_account.reward_chrt_amount)?;
                 donation_account.nominated_donaters[i].unwrap().total_sum = 0;
+                top_infos[i].nominated_sum = 0;
             }
         }
         donation_account.reward_cooldown = current_time;
