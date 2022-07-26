@@ -225,7 +225,7 @@ pub enum DonationError {
 #[program]
 pub mod solana_donation {
 
-    use anchor_lang::{solana_program::{system_instruction, program::{invoke}}, system_program};
+    use anchor_lang::{solana_program::{system_instruction, program::invoke}};
     use anchor_spl::token::{MintTo, self, Transfer};
 
     use super::*;
@@ -395,7 +395,7 @@ pub mod solana_donation {
         Ok(())
     }
 
-    pub fn donate_chrt(ctx: Context<DonateCHRT>, amount: u64, fundraising_id: u64, no_fee: bool) -> Result<()>{
+    pub fn donate_chrt(ctx: Context<DonateCHRT>, amount: u64, _fundraising_id: u64, no_fee: bool) -> Result<()>{
         let fundraising_account = &mut ctx.accounts.fundraising;
         let donater_account = &mut ctx.accounts.donater;
         let donater_token_account = &mut ctx.accounts.donater_token_account;
