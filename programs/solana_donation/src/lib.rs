@@ -39,11 +39,12 @@ pub struct DonationService {
     pub top_donaters: [Option<DonaterTopInfo>; 10],
     pub nominated_donaters: Box<[Option<DonaterTopInfo>; 10]>,
     pub active_fundraising_balances: Vec<ActiveFundraisingBalance>,
+    pub token_mint: Pubkey,
     pub bump: u8
 }
 
 impl DonationService {
-    pub const MAX_SIZE: usize = 32 + 8*10 +  DonaterTopInfo::MAX_SIZE*10 * 2 + (4 + 16 * ACTIVE_FUNDRAISINGS_LIMIT) + 1;
+    pub const MAX_SIZE: usize = 32 + 8*10 +  DonaterTopInfo::MAX_SIZE*10 * 2 + (4 + 16 * ACTIVE_FUNDRAISINGS_LIMIT) + 32 + 1;
 }
 
 #[account]
@@ -219,7 +220,10 @@ pub enum DonationError {
     #[msg("Provided invalid top user account")]
     InvalidWalletAccount,
     #[msg("It's too early")]
-    TooEarly
+    TooEarly,
+    #[msg("Invalid token account")]
+    InvalidTokenAccount
+
 }
 
 #[program]
@@ -230,7 +234,7 @@ pub mod solana_donation {
 
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>, reward_period_seconds: u64, owner_fee_percent: u64, reward_chrt_amount: u64, no_fee_chrt_threshold: u64, cancel_chrt_threshold: u64) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, reward_period_seconds: u64, owner_fee_percent: u64, reward_chrt_amount: u64, no_fee_chrt_threshold: u64, cancel_chrt_threshold: u64, token_mint: Pubkey) -> Result<()> {
         let donation_service_account = &mut ctx.accounts.donation_service;
         donation_service_account.reward_period_seconds = reward_period_seconds;
         donation_service_account.owner_fee_percent = owner_fee_percent;
@@ -239,6 +243,7 @@ pub mod solana_donation {
         donation_service_account.cancel_chrt_threshold = cancel_chrt_threshold;
         donation_service_account.owner = ctx.accounts.owner.key();
         donation_service_account.bump = *ctx.bumps.get("donation_service").unwrap();
+        donation_service_account.token_mint = token_mint;
 
         Ok(())
     }
@@ -400,8 +405,9 @@ pub mod solana_donation {
         let donater_account = &mut ctx.accounts.donater;
         let donater_token_account = &mut ctx.accounts.donater_token_account;
         let fundraising_token_account = &mut ctx.accounts.fundraising_token_account;
-
         let donation_account = &mut ctx.accounts.donation_service;
+        require!(fundraising_token_account.mint == donation_account.token_mint, DonationError::InvalidTokenAccount);
+        require!(donater_token_account.mint == donation_account.token_mint, DonationError::InvalidTokenAccount);
 
         let state_bump = donation_account.bump.to_le_bytes();
 

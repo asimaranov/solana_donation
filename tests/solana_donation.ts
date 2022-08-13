@@ -48,9 +48,13 @@ describe("solana_donation", () => {
   const fundraisingId5 = new BN(4);
 
   it("Test initialization", async () => {
+    await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(payer.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
+
     const [statePda,] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
 
-    await program.methods.initialize(rewardPeriodSeconds, ownerFeePercent, rewardChrtAmount, noFeeChrtThreshold, cancelChrtThreshold).accounts({
+    chrtMint = await createMint(provider.connection, payer, statePda, null, 3);
+
+    await program.methods.initialize(rewardPeriodSeconds, ownerFeePercent, rewardChrtAmount, noFeeChrtThreshold, cancelChrtThreshold, chrtMint).accounts({
       donationService: statePda,
       owner: owner.publicKey
     }).signers([]).rpc();
@@ -59,13 +63,6 @@ describe("solana_donation", () => {
     assert(donationState.fundraisingsNum.eq(new anchor.BN(0)))
     assert(donationState.owner.equals(owner.publicKey))
   });
-
-  it("Test chrt token", async () => {
-    await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(payer.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
-
-    const [statePda,] = await web3.PublicKey.findProgramAddress([anchor.utils.bytes.utf8.encode("state")], program.programId);
-    chrtMint = await createMint(provider.connection, payer, statePda, null, 3);
-  })
 
   it("Test fundraising creation", async () => {
     await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(fundraisingOwnerAccount.publicKey, 1 * anchor.web3.LAMPORTS_PER_SOL));
