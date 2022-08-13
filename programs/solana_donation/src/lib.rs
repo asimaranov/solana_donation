@@ -131,9 +131,9 @@ pub struct Donate<'info> {
 pub struct DonateCHRT<'info> {
     #[account(mut)]
     pub donater: Signer<'info>,
-    #[account(mut)]
+    #[account(mut, token::authority=donater)]
     pub donater_token_account: Account<'info, TokenAccount>,
-    #[account(mut)]
+    #[account(mut, token::authority=fundraising)]
     pub fundraising_token_account: Account<'info, TokenAccount>,
     #[account(mut, seeds=[b"fundraising", fundraising_id.to_le_bytes().as_ref()], bump)]
     pub fundraising: Account<'info, Fundraising>,
